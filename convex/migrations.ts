@@ -1,61 +1,80 @@
 import { mutation } from "./_generated/server";
-import type { Id } from "./_generated/dataModel";
+import { v } from "convex/values";
 
-/**
- * One-time migration helper.
- *
- * When upgrading an existing deployment to the Workspaces schema:
- * - ensures a default workspace exists
- * - backfills workspaceId on all existing rows
- *
- * Safe to run multiple times (idempotent).
- */
-export const migrateToWorkspaces = mutation({
-  args: {},
-  handler: async (ctx) => {
-    const now = Date.now();
-
-    // 1) Ensure default workspace
-    const existingDefault = await ctx.db
+export const moveWorkspaceData = mutation({
+  args: {
+    fromSlug: v.string(),
+    toSlug: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const from = await ctx.db
       .query("workspaces")
-      .withIndex("by_slug", (q) => q.eq("slug", "default"))
+      .withIndex("by_slug", (q) => q.eq("slug", args.fromSlug))
+      .unique();
+    const to = await ctx.db
+      .query("workspaces")
+      .withIndex("by_slug", (q) => q.eq("slug", args.toSlug))
       .unique();
 
-    const defaultWorkspaceId =
-      existingDefault?._id ??
-      (await ctx.db.insert("workspaces", {
-        name: "Default",
-        slug: "default",
-        createdAt: now,
-        updatedAt: now,
-      }));
-
-    // 2) Backfill tables
-    const tables: Array<
-      "agents" | "tasks" | "messages" | "activities" | "documents" | "notifications"
-    > = ["agents", "tasks", "messages", "activities", "documents", "notifications"];
-
-    const patched: Record<string, number> = {};
-
-    for (const table of tables) {
-      const rows = await ctx.db.query(table).collect();
-      let n = 0;
-      for (const r of rows) {
-        const ws = (r as unknown as { workspaceId?: Id<"workspaces"> }).workspaceId;
-        if (ws) continue;
-        await ctx.db.patch(r._id, { workspaceId: defaultWorkspaceId });
-        n++;
-      }
-      patched[table] = n;
+    if (!from || !to) {
+      throw new Error(`Workspace not found: from=${args.fromSlug} to=${args.toSlug}`);
     }
 
-    // 3) Touch workspace updatedAt
-    await ctx.db.patch(defaultWorkspaceId, { updatedAt: now });
-
-    return {
-      ok: true,
-      defaultWorkspaceId,
-      patched,
+    const now = Date.now();
+    const patched = {
+      agents: 0,
+      tasks: 0,
+      messages: 0,
+      activities: 0,
+      documents: 0,
+      notifications: 0,
     };
+
+    // Important: order matters because tasks reference agents and messages reference tasks.
+
+    // Agents
+    for (const a of await ctx.db.query("agents").withIndex("by_workspace_name", (q) => q.eq("workspaceId", from._id)).collect()) {
+      await ctx.db.patch(a._id, { workspaceId: to._id, updatedAt: now });
+      patched.agents++;
+    }
+
+    // Tasks
+    for (const t of await ctx.db.query("tasks").withIndex("by_workspace_updated", (q) => q.eq("workspaceId", from._id)).collect()) {
+      await ctx.db.patch(t._id, { workspaceId: to._id, updatedAt: now });
+      patched.tasks++;
+    }
+
+    // Messages
+    for (const m of await ctx.db.query("messages").withIndex("by_workspace_task", (q) => q.eq("workspaceId", from._id)).collect()) {
+      await ctx.db.patch(m._id, { workspaceId: to._id });
+      patched.messages++;
+    }
+
+    // Activities
+    for (const act of await ctx.db.query("activities").withIndex("by_workspace_created", (q) => q.eq("workspaceId", from._id)).collect()) {
+      await ctx.db.patch(act._id, { workspaceId: to._id });
+      patched.activities++;
+    }
+
+    // Documents
+    for (const d of await ctx.db.query("documents").withIndex("by_workspace_task", (q) => q.eq("workspaceId", from._id)).collect()) {
+      await ctx.db.patch(d._id, { workspaceId: to._id, updatedAt: now });
+      patched.documents++;
+    }
+
+    // Notifications
+    for (const n of await ctx.db.query("notifications").withIndex("by_workspace_delivered", (q) => q.eq("workspaceId", from._id)).collect()) {
+      await ctx.db.patch(n._id, { workspaceId: to._id });
+      patched.notifications++;
+    }
+
+    await ctx.db.insert("activities", {
+      workspaceId: to._id,
+      type: "migration",
+      message: `Moved data from workspace ${args.fromSlug} → ${args.toSlug}`,
+      createdAt: now,
+    });
+
+    return { ok: true, from: from.slug, to: to.slug, patched };
   },
 });

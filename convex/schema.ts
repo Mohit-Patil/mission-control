@@ -15,7 +15,8 @@ export default defineSchema({
     .index("by_updated", ["updatedAt"]),
 
   agents: defineTable({
-    workspaceId: v.id("workspaces"),
+    // Temporarily optional to allow migration of legacy rows.
+    workspaceId: v.optional(v.id("workspaces")),
 
     name: v.string(),
     role: v.string(),
@@ -35,7 +36,8 @@ export default defineSchema({
     .index("by_workspace_name", ["workspaceId", "name"]),
 
   tasks: defineTable({
-    workspaceId: v.id("workspaces"),
+    // Temporarily optional to allow migration of legacy rows.
+    workspaceId: v.optional(v.id("workspaces")),
 
     title: v.string(),
     description: v.optional(v.string()),
@@ -58,7 +60,8 @@ export default defineSchema({
     .index("by_workspace_title", ["workspaceId", "title"]),
 
   messages: defineTable({
-    workspaceId: v.id("workspaces"),
+    // Temporarily optional to allow migration of legacy rows.
+    workspaceId: v.optional(v.id("workspaces")),
 
     taskId: v.id("tasks"),
     fromAgentId: v.optional(v.id("agents")),
@@ -69,7 +72,8 @@ export default defineSchema({
   }).index("by_workspace_task", ["workspaceId", "taskId"]),
 
   activities: defineTable({
-    workspaceId: v.id("workspaces"),
+    // Temporarily optional to allow migration of legacy rows.
+    workspaceId: v.optional(v.id("workspaces")),
 
     type: v.string(),
     agentId: v.optional(v.id("agents")),
@@ -78,7 +82,8 @@ export default defineSchema({
   }).index("by_workspace_created", ["workspaceId", "createdAt"]),
 
   documents: defineTable({
-    workspaceId: v.id("workspaces"),
+    // Temporarily optional to allow migration of legacy rows.
+    workspaceId: v.optional(v.id("workspaces")),
 
     title: v.string(),
     content: v.string(),
@@ -94,7 +99,8 @@ export default defineSchema({
   }).index("by_workspace_task", ["workspaceId", "taskId"]),
 
   notifications: defineTable({
-    workspaceId: v.id("workspaces"),
+    // Temporarily optional to allow migration of legacy rows.
+    workspaceId: v.optional(v.id("workspaces")),
 
     mentionedAgentId: v.id("agents"),
     content: v.string(),
