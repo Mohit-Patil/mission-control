@@ -22,7 +22,10 @@ function readEnvLocal() {
       if (idx === -1) continue;
       const key = trimmed.slice(0, idx).trim();
       let value = trimmed.slice(idx + 1).trim();
-      if ((value.startsWith("\"") && value.endsWith("\"")) || (value.startsWith("'") && value.endsWith("'"))) {
+      if (
+        (value.startsWith("\"") && value.endsWith("\"")) ||
+        (value.startsWith("'") && value.endsWith("'"))
+      ) {
         value = value.slice(1, -1);
       }
       out[key] = value;
@@ -44,7 +47,7 @@ function getConvexUrl() {
 }
 
 function usage() {
-  console.log(`missionctl - Mission Control CLI\n\nEnvironment:\n  CONVEX_URL (or NEXT_PUBLIC_CONVEX_URL)\n\nCommands:\n  agent status\n  agent upsert --name <name> --role <role> --level <LEAD|SPC|INT> --status <idle|active|blocked> [--id <agentId>]\n\n  tasks list [--status <inbox|assigned|in_progress|review|done|blocked>] [--assignee <agentNameOrId>] [--limit <n>]\n  task updateStatus --id <taskId> --status <status>\n  task assign --id <taskId> --agent <agentNameOrId>\n  task unassign --id <taskId> --agent <agentNameOrId>\n\n  message post --task <taskId> --content <text> [--agent <agentNameOrId>]\n\n  notifications list --agent <agentNameOrId> [--all] [--limit <n>]\n  notifications markDelivered --id <notificationId>\n\n  standup [--hours <n>]\n`);
+  console.log(`missionctl - Mission Control CLI\n\nEnvironment:\n  CONVEX_URL (or NEXT_PUBLIC_CONVEX_URL)\n  WORKSPACE_SLUG (optional; can also pass --workspace)\n\nGlobal flags:\n  --workspace <slug>\n\nCommands:\n  agent status\n  agent upsert --name <name> --role <role> --level <LEAD|SPC|INT> --status <idle|active|blocked> [--id <agentId>] [--sessionKey <key>] [--prompt <text>] [--systemNotes <text>]\n\n  tasks list [--status <inbox|assigned|in_progress|review|done|blocked>] [--assignee <agentNameOrId>] [--limit <n>]\n  task updateStatus --id <taskId> --status <status>\n  task assign --id <taskId> --agent <agentNameOrId>\n  task unassign --id <taskId> --agent <agentNameOrId>\n\n  message post --task <taskId> --content <text> [--agent <agentNameOrId>]\n\n  notifications list --agent <agentNameOrId> [--all] [--limit <n>]\n  notifications markDelivered --id <notificationId>\n\n  standup [--hours <n>]\n`);
 }
 
 function parseArgs(argv) {
@@ -67,13 +70,31 @@ function parseArgs(argv) {
   return out;
 }
 
-async function getAgentIdByNameOrId(client, nameOrId) {
+async function getWorkspaceId(client, args) {
+  const slug = args.workspace || process.env.WORKSPACE_SLUG;
+  if (!slug) {
+    usage();
+    console.error("\nMissing workspace. Pass --workspace <slug> or set WORKSPACE_SLUG.");
+    process.exit(2);
+  }
+
+  const ws = await client.query(api.workspaces.getBySlug, { slug });
+  if (!ws) {
+    console.error(`Unknown workspace: ${slug}`);
+    process.exit(2);
+  }
+  return ws._id;
+}
+
+async function getAgentIdByNameOrId(client, workspaceId, nameOrId) {
   if (!nameOrId) return null;
   if (nameOrId.startsWith("\"")) nameOrId = nameOrId.slice(1, -1);
   if (nameOrId.startsWith("agent_")) return nameOrId;
 
-  const agents = await client.query(api.agents.list, {});
-  const found = agents.find((a) => a._id === nameOrId || a.name.toLowerCase() === nameOrId.toLowerCase());
+  const agents = await client.query(api.agents.list, { workspaceId });
+  const found = agents.find(
+    (a) => a._id === nameOrId || a.name.toLowerCase() === nameOrId.toLowerCase()
+  );
   return found?._id ?? null;
 }
 
@@ -94,9 +115,11 @@ async function main() {
     process.exit(1);
   }
 
+  const workspaceId = await getWorkspaceId(client, args);
+
   if (group === "agent") {
     if (cmd === "status") {
-      const agents = await client.query(api.agents.list, {});
+      const agents = await client.query(api.agents.list, { workspaceId });
       for (const a of agents) {
         console.log(`${a._id}\t${a.name}\t${a.level}\t${a.status}\t${a.role}`);
       }
@@ -114,13 +137,17 @@ async function main() {
         process.exit(2);
       }
 
-      const existingId = id || (await getAgentIdByNameOrId(client, name));
+      const existingId = id || (await getAgentIdByNameOrId(client, workspaceId, name));
       const agentId = await client.mutation(api.agents.upsert, {
+        workspaceId,
         id: existingId || undefined,
         name,
         role,
         level,
         status,
+        sessionKey: args.sessionKey || undefined,
+        prompt: args.prompt || undefined,
+        systemNotes: args.systemNotes || undefined,
       });
       console.log(agentId);
       return;
@@ -130,9 +157,10 @@ async function main() {
   if (group === "tasks" && cmd === "list") {
     const status = args.status || undefined;
     const limit = args.limit ? Number(args.limit) : undefined;
-    const assigneeId = await getAgentIdByNameOrId(client, args.assignee);
+    const assigneeId = await getAgentIdByNameOrId(client, workspaceId, args.assignee);
 
     const tasks = await client.query(api.tasks.list, {
+      workspaceId,
       status,
       assigneeId: assigneeId || undefined,
       limit,
@@ -154,6 +182,7 @@ async function main() {
         process.exit(2);
       }
       await client.mutation(api.tasks.updateStatus, {
+        workspaceId,
         id,
         status,
         fromHuman: true,
@@ -170,12 +199,13 @@ async function main() {
         usage();
         process.exit(2);
       }
-      const agentId = await getAgentIdByNameOrId(client, agent);
+      const agentId = await getAgentIdByNameOrId(client, workspaceId, agent);
       if (!agentId) {
         console.error(`Unknown agent: ${agent}`);
         process.exit(2);
       }
       await client.mutation(cmd === "assign" ? api.tasks.assign : api.tasks.unassign, {
+        workspaceId,
         id,
         agentId,
         fromHuman: true,
@@ -193,9 +223,10 @@ async function main() {
       usage();
       process.exit(2);
     }
-    const agentId = await getAgentIdByNameOrId(client, args.agent);
+    const agentId = await getAgentIdByNameOrId(client, workspaceId, args.agent);
 
     await client.mutation(api.messages.create, {
+      workspaceId,
       taskId,
       content,
       fromAgentId: agentId || undefined,
@@ -209,6 +240,7 @@ async function main() {
   if (group === "standup") {
     const hours = args.hours ? Number(args.hours) : undefined;
     const res = await client.query(api.standup.daily, {
+      workspaceId,
       hours,
     });
 
@@ -216,7 +248,7 @@ async function main() {
     for (const b of res.byAgent) {
       const statuses = Object.entries(b.byStatus)
         .sort((a, c) => c[1] - a[1])
-        .map(([k, v]) => `${k}:${v}`)
+        .map(([k, v2]) => `${k}:${v2}`)
         .join(" ");
       console.log(`\n${b.agentName} — ${b.total}` + (statuses ? ` (status: ${statuses})` : ""));
       for (const m of b.recentMessages) {
@@ -233,7 +265,7 @@ async function main() {
         usage();
         process.exit(2);
       }
-      const agentId = await getAgentIdByNameOrId(client, agent);
+      const agentId = await getAgentIdByNameOrId(client, workspaceId, agent);
       if (!agentId) {
         console.error(`Unknown agent: ${agent}`);
         process.exit(2);
@@ -242,6 +274,7 @@ async function main() {
       const undeliveredOnly = args.all ? false : true;
 
       const rows = await client.query(api.notifications.forAgent, {
+        workspaceId,
         agentId,
         limit,
         undeliveredOnly,
@@ -258,7 +291,7 @@ async function main() {
         usage();
         process.exit(2);
       }
-      await client.mutation(api.notifications.markDelivered, { id });
+      await client.mutation(api.notifications.markDelivered, { workspaceId, id });
       console.log("OK");
       return;
     }
