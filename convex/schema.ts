@@ -14,7 +14,9 @@ export default defineSchema({
     sessionKey: v.optional(v.string()),
     createdAt: v.number(),
     updatedAt: v.number(),
-  }).index("by_status", ["status"]),
+  })
+    .index("by_status", ["status"])
+    .index("by_name", ["name"]),
 
   tasks: defineTable({
     title: v.string(),
@@ -34,7 +36,8 @@ export default defineSchema({
     updatedAt: v.number(),
   })
     .index("by_status", ["status"])
-    .index("by_updated", ["updatedAt"]),
+    .index("by_updated", ["updatedAt"])
+    .index("by_title", ["title"]),
 
   messages: defineTable({
     taskId: v.id("tasks"),

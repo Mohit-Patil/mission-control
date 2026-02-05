@@ -5,13 +5,7 @@ export const run = mutation({
   handler: async (ctx) => {
     const now = Date.now();
 
-    // Idempotent-ish: if agents exist, don't reseed.
-    const existingAgents = await ctx.db.query("agents").collect();
-    if (existingAgents.length > 0) {
-      return { ok: true, skipped: true, agents: existingAgents.length };
-    }
-
-    const agents = [
+    const agentsToEnsure = [
       { name: "Mohit", role: "Founder", level: "LEAD" as const, status: "active" as const },
       { name: "Morty", role: "Squad Lead", level: "LEAD" as const, status: "active" as const },
       { name: "Friday", role: "Developer Agent", level: "SPC" as const, status: "active" as const },
@@ -25,17 +19,28 @@ export const run = mutation({
       { name: "Wong", role: "Documentation", level: "SPC" as const, status: "active" as const },
     ];
 
-    const agentIds: { name: string; id: string }[] = [];
-    for (const a of agents) {
+    const nameToId = new Map<string, any>();
+
+    for (const a of agentsToEnsure) {
+      const existing = await ctx.db
+        .query("agents")
+        .withIndex("by_name", (q) => q.eq("name", a.name))
+        .unique();
+
+      if (existing) {
+        nameToId.set(a.name, existing._id);
+        continue;
+      }
+
       const id = await ctx.db.insert("agents", {
         ...a,
         createdAt: now,
         updatedAt: now,
       });
-      agentIds.push({ name: a.name, id });
+      nameToId.set(a.name, id);
     }
 
-    const tasks = [
+    const tasksToEnsure = [
       {
         title: "Mission Control: wire UI to Convex",
         description: "Replace mock data with realtime Convex queries + mutations.",
@@ -57,13 +62,44 @@ export const run = mutation({
         tags: ["agents", "cron"],
         assignees: ["Morty"],
       },
+      {
+        title: "Draft onboarding email sequence",
+        description: "Write a 5-email onboarding sequence for new trial users.",
+        status: "inbox" as const,
+        tags: ["email", "growth"],
+        assignees: ["Pepper"],
+      },
+      {
+        title: "Audit landing page SEO",
+        description: "Check titles, meta descriptions, schema, and internal links.",
+        status: "assigned" as const,
+        tags: ["seo"],
+        assignees: ["Vision"],
+      },
+      {
+        title: "Collect top 10 customer objections",
+        description: "Summarize objections from calls and support tickets.",
+        status: "in_progress" as const,
+        tags: ["research", "sales"],
+        assignees: ["Fury"],
+      },
     ];
 
-    const nameToId = new Map(agentIds.map((x) => [x.name, x.id]));
+    const titleToId = new Map<string, any>();
 
-    for (const t of tasks) {
+    for (const t of tasksToEnsure) {
+      const existing = await ctx.db
+        .query("tasks")
+        .withIndex("by_title", (q) => q.eq("title", t.title))
+        .unique();
+
+      if (existing) {
+        titleToId.set(t.title, existing._id);
+        continue;
+      }
+
       const assigneeIds = t.assignees.map((n) => nameToId.get(n)).filter(Boolean);
-      await ctx.db.insert("tasks", {
+      const id = await ctx.db.insert("tasks", {
         title: t.title,
         description: t.description,
         status: t.status,
@@ -72,14 +108,67 @@ export const run = mutation({
         createdAt: now,
         updatedAt: now,
       });
+      titleToId.set(t.title, id);
     }
 
-    await ctx.db.insert("activities", {
-      type: "seed",
-      message: "Seeded Mission Control with starter agents + tasks",
-      createdAt: now,
-    });
+    // Seed a couple of message threads (idempotent per task: only seed if empty)
+    const seedThreads: Array<{ taskTitle: string; messages: Array<{ from: "human" | "agent"; agent?: string; content: string }> }> = [
+      {
+        taskTitle: "Add task drawer + comments thread",
+        messages: [
+          { from: "human", content: "Let’s keep the drawer minimal: details + comments first." },
+          { from: "agent", agent: "Morty", content: "On it — will wire messages to Convex and keep styling consistent." },
+        ],
+      },
+      {
+        taskTitle: "Mission Control: wire UI to Convex",
+        messages: [
+          { from: "agent", agent: "Friday", content: "Swapping remaining mock UI flows to Convex-first mutations." },
+          { from: "human", content: "Priority: task creation, status moves, and clean activity feed events." },
+        ],
+      },
+    ];
 
-    return { ok: true, skipped: false, agents: agentIds.length, tasks: tasks.length };
+    for (const thread of seedThreads) {
+      const taskId = titleToId.get(thread.taskTitle);
+      if (!taskId) continue;
+
+      const existing = await ctx.db
+        .query("messages")
+        .withIndex("by_task", (q) => q.eq("taskId", taskId))
+        .take(1);
+
+      if (existing.length > 0) continue;
+
+      for (const m of thread.messages) {
+        const fromAgentId = m.from === "agent" && m.agent ? nameToId.get(m.agent) : undefined;
+        await ctx.db.insert("messages", {
+          taskId,
+          fromAgentId,
+          fromHuman: m.from === "human" ? true : undefined,
+          content: m.content,
+          attachments: [],
+          createdAt: now,
+        });
+      }
+    }
+
+    const seeded = await ctx.db
+      .query("activities")
+      .filter((q) => q.eq(q.field("type"), "seed_v2"))
+      .take(1);
+
+    if (seeded.length === 0) {
+      await ctx.db.insert("activities", {
+        type: "seed_v2",
+        message: "Seeded Mission Control with agents, tasks, and starter threads",
+        createdAt: now,
+      });
+    }
+
+    const agentsCount = (await ctx.db.query("agents").collect()).length;
+    const tasksCount = (await ctx.db.query("tasks").collect()).length;
+
+    return { ok: true, agents: agentsCount, tasks: tasksCount };
   },
 });
