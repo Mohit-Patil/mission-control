@@ -25,7 +25,8 @@ function desired() {
 
 function listJobs() {
   const raw = oc("cron", "list", "--json");
-  return JSON.parse(raw);
+  const parsed = JSON.parse(raw);
+  return parsed.jobs ?? parsed;
 }
 
 function addJob(name, expr, message) {
