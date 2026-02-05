@@ -10,6 +10,7 @@ function extractStatus(message: string): string | null {
 
 export const daily = query({
   args: {
+    workspaceId: v.id("workspaces"),
     hours: v.optional(v.number()),
     limit: v.optional(v.number()),
   },
@@ -18,10 +19,17 @@ export const daily = query({
     const since = Date.now() - hours * 60 * 60 * 1000;
     const limit = Math.min(2000, Math.max(1, args.limit ?? 500));
 
-    const agents = await ctx.db.query("agents").collect();
+    const agents = await ctx.db
+      .query("agents")
+      .withIndex("by_workspace_name", (q) => q.eq("workspaceId", args.workspaceId))
+      .collect();
     const nameById = new Map(agents.map((a) => [a._id, a.name] as const));
 
-    const recent = await ctx.db.query("activities").withIndex("by_created").order("desc").take(limit);
+    const recent = await ctx.db
+      .query("activities")
+      .withIndex("by_workspace_created", (q) => q.eq("workspaceId", args.workspaceId))
+      .order("desc")
+      .take(limit);
     const windowed = recent.filter((a) => a.createdAt >= since);
 
     type Bucket = {
@@ -65,6 +73,7 @@ export const daily = query({
     }
 
     return {
+      workspaceId: args.workspaceId,
       hours,
       since,
       totalActivities: windowed.length,

@@ -5,20 +5,38 @@ import { v } from "convex/values";
  * Mission Control schema (modeled after the reference screenshots / thread)
  */
 export default defineSchema({
+  workspaces: defineTable({
+    name: v.string(),
+    slug: v.string(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_slug", ["slug"])
+    .index("by_updated", ["updatedAt"]),
+
   agents: defineTable({
+    workspaceId: v.id("workspaces"),
+
     name: v.string(),
     role: v.string(),
     level: v.union(v.literal("LEAD"), v.literal("SPC"), v.literal("INT")),
     status: v.union(v.literal("idle"), v.literal("active"), v.literal("blocked")),
     currentTaskId: v.optional(v.id("tasks")),
     sessionKey: v.optional(v.string()),
+
+    // Freeform prompt / notes for human operators.
+    prompt: v.optional(v.string()),
+    systemNotes: v.optional(v.string()),
+
     createdAt: v.number(),
     updatedAt: v.number(),
   })
-    .index("by_status", ["status"])
-    .index("by_name", ["name"]),
+    .index("by_workspace_status", ["workspaceId", "status"])
+    .index("by_workspace_name", ["workspaceId", "name"]),
 
   tasks: defineTable({
+    workspaceId: v.id("workspaces"),
+
     title: v.string(),
     description: v.optional(v.string()),
     status: v.union(
@@ -35,27 +53,33 @@ export default defineSchema({
     createdAt: v.number(),
     updatedAt: v.number(),
   })
-    .index("by_status", ["status"])
-    .index("by_updated", ["updatedAt"])
-    .index("by_title", ["title"]),
+    .index("by_workspace_status", ["workspaceId", "status"])
+    .index("by_workspace_updated", ["workspaceId", "updatedAt"])
+    .index("by_workspace_title", ["workspaceId", "title"]),
 
   messages: defineTable({
+    workspaceId: v.id("workspaces"),
+
     taskId: v.id("tasks"),
     fromAgentId: v.optional(v.id("agents")),
     fromHuman: v.optional(v.boolean()),
     content: v.string(),
     attachments: v.array(v.id("documents")),
     createdAt: v.number(),
-  }).index("by_task", ["taskId"]),
+  }).index("by_workspace_task", ["workspaceId", "taskId"]),
 
   activities: defineTable({
+    workspaceId: v.id("workspaces"),
+
     type: v.string(),
     agentId: v.optional(v.id("agents")),
     message: v.string(),
     createdAt: v.number(),
-  }).index("by_created", ["createdAt"]),
+  }).index("by_workspace_created", ["workspaceId", "createdAt"]),
 
   documents: defineTable({
+    workspaceId: v.id("workspaces"),
+
     title: v.string(),
     content: v.string(),
     type: v.union(
@@ -67,14 +91,16 @@ export default defineSchema({
     taskId: v.optional(v.id("tasks")),
     createdAt: v.number(),
     updatedAt: v.number(),
-  }).index("by_task", ["taskId"]),
+  }).index("by_workspace_task", ["workspaceId", "taskId"]),
 
   notifications: defineTable({
+    workspaceId: v.id("workspaces"),
+
     mentionedAgentId: v.id("agents"),
     content: v.string(),
     delivered: v.boolean(),
     createdAt: v.number(),
   })
-    .index("by_delivered", ["delivered"])
-    .index("by_agent", ["mentionedAgentId"]),
+    .index("by_workspace_delivered", ["workspaceId", "delivered"])
+    .index("by_workspace_agent", ["workspaceId", "mentionedAgentId"]),
 });

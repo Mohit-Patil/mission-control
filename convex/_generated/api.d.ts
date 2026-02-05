@@ -11,10 +11,12 @@
 import type * as agents from "../agents.js";
 import type * as liveFeed from "../liveFeed.js";
 import type * as messages from "../messages.js";
+import type * as migrations from "../migrations.js";
 import type * as notifications from "../notifications.js";
 import type * as seed from "../seed.js";
 import type * as standup from "../standup.js";
 import type * as tasks from "../tasks.js";
+import type * as workspaces from "../workspaces.js";
 
 import type {
   ApiFromModules,
@@ -26,10 +28,12 @@ declare const fullApi: ApiFromModules<{
   agents: typeof agents;
   liveFeed: typeof liveFeed;
   messages: typeof messages;
+  migrations: typeof migrations;
   notifications: typeof notifications;
   seed: typeof seed;
   standup: typeof standup;
   tasks: typeof tasks;
+  workspaces: typeof workspaces;
 }>;
 
 /**

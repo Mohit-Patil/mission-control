@@ -6,6 +6,21 @@ export const run = mutation({
   handler: async (ctx) => {
     const now = Date.now();
 
+    // Ensure a default workspace (idempotent)
+    const existingWs = await ctx.db
+      .query("workspaces")
+      .withIndex("by_slug", (q) => q.eq("slug", "default"))
+      .unique();
+
+    const workspaceId: Id<"workspaces"> =
+      existingWs?._id ??
+      (await ctx.db.insert("workspaces", {
+        name: "Default",
+        slug: "default",
+        createdAt: now,
+        updatedAt: now,
+      }));
+
     const agentsToEnsure = [
       { name: "Mohit", role: "Founder", level: "LEAD" as const, status: "active" as const },
       { name: "Morty", role: "Squad Lead", level: "LEAD" as const, status: "active" as const },
@@ -25,7 +40,7 @@ export const run = mutation({
     for (const a of agentsToEnsure) {
       const existing = await ctx.db
         .query("agents")
-        .withIndex("by_name", (q) => q.eq("name", a.name))
+        .withIndex("by_workspace_name", (q) => q.eq("workspaceId", workspaceId).eq("name", a.name))
         .unique();
 
       if (existing) {
@@ -34,6 +49,7 @@ export const run = mutation({
       }
 
       const id = await ctx.db.insert("agents", {
+        workspaceId,
         ...a,
         createdAt: now,
         updatedAt: now,
@@ -91,7 +107,7 @@ export const run = mutation({
     for (const t of tasksToEnsure) {
       const existing = await ctx.db
         .query("tasks")
-        .withIndex("by_title", (q) => q.eq("title", t.title))
+        .withIndex("by_workspace_title", (q) => q.eq("workspaceId", workspaceId).eq("title", t.title))
         .unique();
 
       if (existing) {
@@ -103,6 +119,7 @@ export const run = mutation({
         .map((n) => nameToId.get(n))
         .filter((x): x is Id<"agents"> => x !== undefined);
       const id = await ctx.db.insert("tasks", {
+        workspaceId,
         title: t.title,
         description: t.description,
         status: t.status,
@@ -115,12 +132,19 @@ export const run = mutation({
     }
 
     // Seed a couple of message threads (idempotent per task: only seed if empty)
-    const seedThreads: Array<{ taskTitle: string; messages: Array<{ from: "human" | "agent"; agent?: string; content: string }> }> = [
+    const seedThreads: Array<{
+      taskTitle: string;
+      messages: Array<{ from: "human" | "agent"; agent?: string; content: string }>;
+    }> = [
       {
         taskTitle: "Add task drawer + comments thread",
         messages: [
           { from: "human", content: "Let’s keep the drawer minimal: details + comments first." },
-          { from: "agent", agent: "Morty", content: "On it — will wire messages to Convex and keep styling consistent." },
+          {
+            from: "agent",
+            agent: "Morty",
+            content: "On it — will wire messages to Convex and keep styling consistent.",
+          },
         ],
       },
       {
@@ -138,7 +162,7 @@ export const run = mutation({
 
       const existing = await ctx.db
         .query("messages")
-        .withIndex("by_task", (q) => q.eq("taskId", taskId))
+        .withIndex("by_workspace_task", (q) => q.eq("workspaceId", workspaceId).eq("taskId", taskId))
         .take(1);
 
       if (existing.length > 0) continue;
@@ -146,6 +170,7 @@ export const run = mutation({
       for (const m of thread.messages) {
         const fromAgentId = m.from === "agent" && m.agent ? nameToId.get(m.agent) : undefined;
         await ctx.db.insert("messages", {
+          workspaceId,
           taskId,
           fromAgentId,
           fromHuman: m.from === "human" ? true : undefined,
@@ -158,20 +183,32 @@ export const run = mutation({
 
     const seeded = await ctx.db
       .query("activities")
-      .filter((q) => q.eq(q.field("type"), "seed_v2"))
+      .withIndex("by_workspace_created", (q) => q.eq("workspaceId", workspaceId))
+      .filter((q) => q.eq(q.field("type"), "seed_v3"))
       .take(1);
 
     if (seeded.length === 0) {
       await ctx.db.insert("activities", {
-        type: "seed_v2",
-        message: "Seeded Mission Control with agents, tasks, and starter threads",
+        workspaceId,
+        type: "seed_v3",
+        message: "Seeded Mission Control workspace with agents, tasks, and starter threads",
         createdAt: now,
       });
     }
 
-    const agentsCount = (await ctx.db.query("agents").collect()).length;
-    const tasksCount = (await ctx.db.query("tasks").collect()).length;
+    const agentsCount = (
+      await ctx.db
+        .query("agents")
+        .withIndex("by_workspace_name", (q) => q.eq("workspaceId", workspaceId))
+        .collect()
+    ).length;
+    const tasksCount = (
+      await ctx.db
+        .query("tasks")
+        .withIndex("by_workspace_updated", (q) => q.eq("workspaceId", workspaceId))
+        .collect()
+    ).length;
 
-    return { ok: true, agents: agentsCount, tasks: tasksCount };
+    return { ok: true, workspaceId, agents: agentsCount, tasks: tasksCount };
   },
 });

@@ -9,11 +9,16 @@ function truncate(s: string, n: number) {
 }
 
 export const listByTask = query({
-  args: { taskId: v.id("tasks") },
+  args: {
+    workspaceId: v.id("workspaces"),
+    taskId: v.id("tasks"),
+  },
   handler: async (ctx, args) => {
     return await ctx.db
       .query("messages")
-      .withIndex("by_task", (q) => q.eq("taskId", args.taskId))
+      .withIndex("by_workspace_task", (q) =>
+        q.eq("workspaceId", args.workspaceId).eq("taskId", args.taskId)
+      )
       .order("asc")
       .collect();
   },
@@ -21,6 +26,7 @@ export const listByTask = query({
 
 export const create = mutation({
   args: {
+    workspaceId: v.id("workspaces"),
     taskId: v.id("tasks"),
     content: v.string(),
     fromAgentId: v.optional(v.id("agents")),
@@ -32,7 +38,15 @@ export const create = mutation({
     const content = args.content.trim();
     if (!content) throw new Error("Message content cannot be empty");
 
+    const task = await ctx.db.get(args.taskId);
+    if (!task) throw new Error("Task not found");
+    if (task.workspaceId !== args.workspaceId) throw new Error("Wrong workspace");
+
+    const agent = args.fromAgentId ? await ctx.db.get(args.fromAgentId) : null;
+    if (agent && agent.workspaceId !== args.workspaceId) throw new Error("Wrong workspace");
+
     await ctx.db.insert("messages", {
+      workspaceId: args.workspaceId,
       taskId: args.taskId,
       fromAgentId: args.fromAgentId,
       fromHuman: args.fromHuman,
@@ -41,13 +55,11 @@ export const create = mutation({
       createdAt: now,
     });
 
-    const task = await ctx.db.get(args.taskId);
-    const agent = args.fromAgentId ? await ctx.db.get(args.fromAgentId) : null;
-
     const actor = agent?.name ?? (args.fromHuman ? args.actorName ?? "Human" : "System");
     const taskTitle = task?.title ?? "(unknown task)";
 
     await ctx.db.insert("activities", {
+      workspaceId: args.workspaceId,
       type: "comment",
       agentId: agent?._id,
       message: `${actor} commented on “${taskTitle}”: ${truncate(content, 120)}`,
@@ -55,7 +67,10 @@ export const create = mutation({
     });
 
     // Mentions → notifications (@AgentName, @all)
-    const allAgents = await ctx.db.query("agents").collect();
+    const allAgents = await ctx.db
+      .query("agents")
+      .withIndex("by_workspace_name", (q) => q.eq("workspaceId", args.workspaceId))
+      .collect();
 
     const mentionedIds = new Set<Id<"agents">>();
     const mentionAll = /@all\b/i.test(content);
@@ -74,6 +89,7 @@ export const create = mutation({
 
     for (const mentionedAgentId of mentionedIds) {
       await ctx.db.insert("notifications", {
+        workspaceId: args.workspaceId,
         mentionedAgentId,
         content: `${actor} mentioned you on “${taskTitle}”: ${truncate(content, 200)}`,
         delivered: false,
