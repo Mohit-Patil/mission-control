@@ -107,13 +107,26 @@ function TaskCard({
 
 function TaskDetailDrawer({
   open,
+  taskId,
   task,
+  agentNameById,
   onClose,
 }: {
   open: boolean;
-  task: { title: string; description?: string; status: string; tags: string[]; updatedAt: number } | null;
+  taskId: Id<"tasks"> | null;
+  task:
+    | { _id: Id<"tasks">; title: string; description?: string; status: string; tags: string[]; updatedAt: number }
+    | null;
+  agentNameById: Map<string, string>;
   onClose: () => void;
 }) {
+  const messages = useQuery(
+    api.messages.listByTask,
+    open && taskId ? { taskId } : ("skip" as any)
+  );
+  const createMessage = useMutation(api.messages.create);
+  const [draft, setDraft] = useState("");
+
   if (!open) return null;
 
   return (
@@ -164,7 +177,66 @@ function TaskDetailDrawer({
 
           <div className="mc-drawer-section">
             <div className="mc-drawer-label">Messages</div>
-            <div className="mc-thread-placeholder">Message thread (wire to Convex next)</div>
+
+            <div className="mc-thread">
+              {(messages ?? []).length ? (
+                (messages ?? []).map((m) => {
+                  const author = m.fromHuman
+                    ? "Human"
+                    : m.fromAgentId
+                      ? agentNameById.get(m.fromAgentId) ?? "Agent"
+                      : "System";
+                  return (
+                    <div key={m._id} className="mc-msg">
+                      <div className="mc-msg-meta">
+                        <span className="mc-msg-author">{author}</span>
+                        <span className="mc-msg-time">{new Date(m.createdAt).toLocaleString()}</span>
+                      </div>
+                      <div className="mc-msg-body">{m.content}</div>
+                    </div>
+                  );
+                })
+              ) : (
+                <div className="mc-thread-placeholder">No messages yet. Add the first comment.</div>
+              )}
+            </div>
+
+            <form
+              className="mc-msg-form"
+              onSubmit={async (e) => {
+                e.preventDefault();
+                if (!taskId) return;
+                const content = draft.trim();
+                if (!content) return;
+                await createMessage({
+                  taskId,
+                  content,
+                  fromHuman: true,
+                  actorName: "Human",
+                });
+                setDraft("");
+              }}
+            >
+              <textarea
+                className="mc-textarea"
+                placeholder="Write a comment…"
+                value={draft}
+                onChange={(e) => setDraft(e.target.value)}
+                rows={3}
+              />
+              <div className="mt-2 flex items-center justify-end gap-2">
+                <button
+                  className="mc-pill bg-zinc-100 text-zinc-700"
+                  type="button"
+                  onClick={() => setDraft("")}
+                >
+                  Clear
+                </button>
+                <button className="mc-pill bg-zinc-900 text-white" type="submit">
+                  Post
+                </button>
+              </div>
+            </form>
           </div>
         </div>
 
@@ -205,6 +277,10 @@ export function MissionControlPage() {
     }
     return null;
   }, [columns, selectedTaskId]);
+
+  const agentNameById = useMemo(() => {
+    return new Map(agents.map((a) => [a._id, a.name] as const));
+  }, [agents]);
 
   return (
     <div className="mc-root">
@@ -369,7 +445,9 @@ export function MissionControlPage() {
 
       <TaskDetailDrawer
         open={!!selectedTaskId}
+        taskId={selectedTaskId}
         task={selectedTask}
+        agentNameById={agentNameById}
         onClose={() => setSelectedTaskId(null)}
       />
     </div>

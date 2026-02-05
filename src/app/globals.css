@@ -372,6 +372,71 @@ body {
   color: #a1a1aa;
 }
 
+.mc-thread {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: 40vh;
+  overflow: auto;
+  padding-right: 4px;
+}
+
+.mc-msg {
+  border: 1px solid var(--mc-line-2);
+  border-radius: 12px;
+  padding: 10px;
+  background: rgba(250, 250, 250, 0.6);
+}
+
+.mc-msg-meta {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.mc-msg-author {
+  font-size: 11px;
+  font-weight: 700;
+  color: #3f3f46;
+}
+
+.mc-msg-time {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.22em;
+  color: #a1a1aa;
+}
+
+.mc-msg-body {
+  margin-top: 6px;
+  font-size: 12px;
+  line-height: 1.4rem;
+  color: #18181b;
+  white-space: pre-wrap;
+}
+
+.mc-msg-form {
+  margin-top: 12px;
+}
+
+.mc-textarea {
+  width: 100%;
+  resize: vertical;
+  border: 1px solid var(--mc-line);
+  border-radius: 12px;
+  padding: 10px;
+  font-size: 12px;
+  line-height: 1.4rem;
+  background: #fff;
+  outline: none;
+}
+
+.mc-textarea:focus {
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
+  border-color: rgba(59, 130, 246, 0.35);
+}
+
 @media (max-width: 1200px) {
   .mc-grid {
     grid-template-columns: 260px 1fr;
