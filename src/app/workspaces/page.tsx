@@ -14,6 +14,14 @@ function slugify(input: string) {
     .replace(/(^-|-$)+/g, "");
 }
 
+function errorMessage(e: unknown) {
+  if (e && typeof e === "object" && "message" in e) {
+    const msg = (e as { message?: unknown }).message;
+    return String(msg);
+  }
+  return String(e ?? "Unknown error");
+}
+
 export default function WorkspacesPage() {
   const router = useRouter();
   const workspaces = useQuery(api.workspaces.list);
@@ -83,8 +91,8 @@ export default function WorkspacesPage() {
                   } else {
                     router.push("/");
                   }
-                } catch (e: any) {
-                  setError(e?.message ?? "Failed to create workspace");
+                } catch (e: unknown) {
+                  setError(errorMessage(e) || "Failed to create workspace");
                 }
               }}
             >

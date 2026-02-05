@@ -1,4 +1,5 @@
 import { mutation } from "./_generated/server";
+import type { Id } from "./_generated/dataModel";
 
 /**
  * One-time migration helper.
@@ -40,9 +41,9 @@ export const migrateToWorkspaces = mutation({
       const rows = await ctx.db.query(table).collect();
       let n = 0;
       for (const r of rows) {
-        // @ts-expect-error - legacy docs may not have workspaceId.
-        if (r.workspaceId) continue;
-        await ctx.db.patch(r._id, { workspaceId: defaultWorkspaceId } as any);
+        const ws = (r as unknown as { workspaceId?: Id<"workspaces"> }).workspaceId;
+        if (ws) continue;
+        await ctx.db.patch(r._id, { workspaceId: defaultWorkspaceId });
         n++;
       }
       patched[table] = n;

@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery } from "convex/react";
-import { useParams, useRouter } from "next/navigation";
+import { useParams } from "next/navigation";
 import { api } from "../../../../../convex/_generated/api";
 import type { Doc, Id } from "../../../../../convex/_generated/dataModel";
 
@@ -34,8 +34,15 @@ function toDraft(a?: Doc<"agents"> | null): Draft {
   };
 }
 
+function errorMessage(e: unknown) {
+  if (e && typeof e === "object" && "message" in e) {
+    const msg = (e as { message?: unknown }).message;
+    return String(msg);
+  }
+  return String(e ?? "Unknown error");
+}
+
 export default function WorkspaceAgentsPage() {
-  const router = useRouter();
   const params = useParams<{ slug: string }>();
   const slug = params.slug;
 
@@ -61,10 +68,17 @@ export default function WorkspaceAgentsPage() {
   const [draft, setDraft] = useState<Draft>(() => toDraft(null));
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
+  const selectNew = () => {
     setError(null);
-    setDraft(toDraft(selectedId === "new" ? null : selected));
-  }, [selected, selectedId]);
+    setSelectedId("new");
+    setDraft(toDraft(null));
+  };
+
+  const selectExisting = (agent: Doc<"agents">) => {
+    setError(null);
+    setSelectedId(agent._id);
+    setDraft(toDraft(agent));
+  };
 
   if (workspace === undefined) {
     return <div className="p-6 text-[12px] text-zinc-600">Loading…</div>;
@@ -111,7 +125,7 @@ export default function WorkspaceAgentsPage() {
               <button
                 className="mc-pill bg-zinc-900 text-white"
                 type="button"
-                onClick={() => setSelectedId("new")}
+                onClick={selectNew}
               >
                 + New
               </button>
@@ -130,7 +144,7 @@ export default function WorkspaceAgentsPage() {
                         ? "border-zinc-900 bg-zinc-50"
                         : "border-zinc-200 bg-white hover:bg-zinc-50")
                     }
-                    onClick={() => setSelectedId(a._id)}
+                    onClick={() => selectExisting(a)}
                   >
                     <span className="mc-mini-avatar" aria-hidden />
                     <div className="min-w-0">
@@ -193,8 +207,9 @@ export default function WorkspaceAgentsPage() {
                         systemNotes: draft.systemNotes.trim() ? draft.systemNotes : undefined,
                       });
                       setSelectedId(id);
-                    } catch (e: any) {
-                      setError(e?.message ?? "Failed to save agent");
+                      setDraft((d) => ({ ...d, id }));
+                    } catch (e: unknown) {
+                      setError(errorMessage(e) || "Failed to save agent");
                     }
                   }}
                 >
