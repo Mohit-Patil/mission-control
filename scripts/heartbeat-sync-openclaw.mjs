@@ -30,8 +30,7 @@ function listJobs() {
 }
 
 function addJob(name, expr, message) {
-  // OpenClaw CLI cron add supports JSON; but we use gateway tool via cron in agent typically.
-  // Here we use CLI for simplicity.
+  // Use --no-deliver to avoid noisy announcements.
   oc(
     "cron",
     "add",
@@ -41,6 +40,7 @@ function addJob(name, expr, message) {
     expr,
     "--session",
     "isolated",
+    "--no-deliver",
     "--message",
     message
   );
@@ -51,6 +51,8 @@ function main() {
   const jobs = listJobs();
   const existing = new Map();
   for (const j of jobs) existing.set(j.name, j);
+
+  // Precompute existing names for debugging.
 
   let created = 0;
   for (const w of want) {
