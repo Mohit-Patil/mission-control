@@ -285,6 +285,86 @@ body {
   z-index: 50;
 }
 
+.mc-modal-root {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 18px;
+}
+
+.mc-modal-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(24, 24, 27, 0.32);
+}
+
+.mc-modal {
+  position: relative;
+  width: min(560px, 100%);
+  border: 1px solid var(--mc-line);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.92);
+  backdrop-filter: blur(10px);
+  overflow: hidden;
+  box-shadow: 0 24px 80px rgba(24, 24, 27, 0.14);
+}
+
+.mc-modal-header {
+  padding: 14px;
+  border-bottom: 1px solid var(--mc-line-2);
+  display: flex;
+  justify-content: space-between;
+  align-items: start;
+  gap: 12px;
+}
+
+.mc-modal-body {
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.mc-modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding-top: 4px;
+}
+
+.mc-form-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.mc-form-label {
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: #71717a;
+}
+
+.mc-input {
+  width: 100%;
+  height: 34px;
+  border: 1px solid var(--mc-line);
+  border-radius: 12px;
+  padding: 0 10px;
+  font-size: 12px;
+  background: #fff;
+  outline: none;
+}
+
+.mc-input:focus {
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
+  border-color: rgba(59, 130, 246, 0.35);
+}
+
 .mc-drawer-backdrop {
   position: absolute;
   inset: 0;

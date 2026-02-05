@@ -105,6 +105,125 @@ function TaskCard({
   );
 }
 
+function NewTaskModal({
+  open,
+  onClose,
+  onCreated,
+}: {
+  open: boolean;
+  onClose: () => void;
+  onCreated: (id: Id<"tasks">) => void;
+}) {
+  const createTask = useMutation(api.tasks.create);
+  const [title, setTitle] = useState("");
+  const [description, setDescription] = useState("");
+  const [tags, setTags] = useState("");
+  const [status, setStatus] = useState<string>("");
+
+  if (!open) return null;
+
+  return (
+    <div className="mc-modal-root" role="dialog" aria-modal="true">
+      <button className="mc-modal-backdrop" type="button" onClick={onClose} aria-label="Close" />
+      <div className="mc-modal">
+        <div className="mc-modal-header">
+          <div>
+            <div className="text-[10px] font-bold uppercase tracking-[0.22em] text-zinc-500">
+              New Task
+            </div>
+            <div className="mt-1 text-[16px] font-semibold text-zinc-900">Create task</div>
+          </div>
+          <button className="mc-icon-btn" type="button" onClick={onClose} aria-label="Close">
+            ✕
+          </button>
+        </div>
+
+        <form
+          className="mc-modal-body"
+          onSubmit={async (e) => {
+            e.preventDefault();
+            const cleanTitle = title.trim();
+            if (!cleanTitle) return;
+
+            const tagList = tags
+              .split(",")
+              .map((t) => t.trim())
+              .filter(Boolean);
+
+            const id = await createTask({
+              title: cleanTitle,
+              description: description.trim() ? description.trim() : undefined,
+              tags: tagList.length ? tagList : undefined,
+              status: status ? (status as any) : undefined,
+            });
+
+            setTitle("");
+            setDescription("");
+            setTags("");
+            setStatus("");
+            onClose();
+            onCreated(id);
+          }}
+        >
+          <div className="mc-form-row">
+            <label className="mc-form-label">Title</label>
+            <input
+              className="mc-input"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              placeholder="e.g. Update pricing page copy"
+              autoFocus
+            />
+          </div>
+
+          <div className="mc-form-row">
+            <label className="mc-form-label">Description</label>
+            <textarea
+              className="mc-textarea"
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder="Optional"
+              rows={4}
+            />
+          </div>
+
+          <div className="mc-form-row">
+            <label className="mc-form-label">Tags</label>
+            <input
+              className="mc-input"
+              value={tags}
+              onChange={(e) => setTags(e.target.value)}
+              placeholder="Comma separated (e.g. ui, ux, internal)"
+            />
+          </div>
+
+          <div className="mc-form-row">
+            <label className="mc-form-label">Status</label>
+            <select className="mc-input" value={status} onChange={(e) => setStatus(e.target.value)}>
+              <option value="">Inbox (default)</option>
+              <option value="inbox">Inbox</option>
+              <option value="assigned">Assigned</option>
+              <option value="in_progress">In Progress</option>
+              <option value="review">Review</option>
+              <option value="done">Done</option>
+              <option value="blocked">Blocked</option>
+            </select>
+          </div>
+
+          <div className="mc-modal-footer">
+            <button className="mc-pill bg-zinc-100 text-zinc-700" type="button" onClick={onClose}>
+              Cancel
+            </button>
+            <button className="mc-pill bg-zinc-900 text-white" type="submit">
+              Create
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
 function TaskDetailDrawer({
   open,
   taskId,
@@ -260,6 +379,7 @@ export function MissionControlPage() {
   const liveFeed = useQuery(api.liveFeed.latest) || [];
 
   const [selectedTaskId, setSelectedTaskId] = useState<Id<"tasks"> | null>(null);
+  const [newTaskOpen, setNewTaskOpen] = useState(false);
 
   const columns = [
     { key: "inbox", title: "Inbox", tasks: inbox },
@@ -357,6 +477,13 @@ export function MissionControlPage() {
               <div className="mc-panel-title">Mission Queue</div>
             </div>
             <div className="flex items-center gap-3">
+              <button
+                className="mc-pill bg-zinc-900 text-white"
+                type="button"
+                onClick={() => setNewTaskOpen(true)}
+              >
+                + New Task
+              </button>
               <Chip>
                 <span className="mc-mini-avatar" aria-hidden /> 1
               </Chip>
@@ -442,6 +569,12 @@ export function MissionControlPage() {
           </div>
         </aside>
       </div>
+
+      <NewTaskModal
+        open={newTaskOpen}
+        onClose={() => setNewTaskOpen(false)}
+        onCreated={(id) => setSelectedTaskId(id)}
+      />
 
       <TaskDetailDrawer
         open={!!selectedTaskId}
