@@ -44,7 +44,7 @@ function getConvexUrl() {
 }
 
 function usage() {
-  console.log(`missionctl - Mission Control CLI\n\nEnvironment:\n  CONVEX_URL (or NEXT_PUBLIC_CONVEX_URL)\n\nCommands:\n  agent status\n  agent upsert --name <name> --role <role> --level <LEAD|SPC|INT> --status <idle|active|blocked> [--id <agentId>]\n\n  tasks list [--status <inbox|assigned|in_progress|review|done|blocked>] [--assignee <agentNameOrId>] [--limit <n>]\n  task updateStatus --id <taskId> --status <status>\n  task assign --id <taskId> --agent <agentNameOrId>\n  task unassign --id <taskId> --agent <agentNameOrId>\n\n  message post --task <taskId> --content <text> [--agent <agentNameOrId>]\n\n  notifications list --agent <agentNameOrId> [--all] [--limit <n>]\n  notifications markDelivered --id <notificationId>\n`);
+  console.log(`missionctl - Mission Control CLI\n\nEnvironment:\n  CONVEX_URL (or NEXT_PUBLIC_CONVEX_URL)\n\nCommands:\n  agent status\n  agent upsert --name <name> --role <role> --level <LEAD|SPC|INT> --status <idle|active|blocked> [--id <agentId>]\n\n  tasks list [--status <inbox|assigned|in_progress|review|done|blocked>] [--assignee <agentNameOrId>] [--limit <n>]\n  task updateStatus --id <taskId> --status <status>\n  task assign --id <taskId> --agent <agentNameOrId>\n  task unassign --id <taskId> --agent <agentNameOrId>\n\n  message post --task <taskId> --content <text> [--agent <agentNameOrId>]\n\n  notifications list --agent <agentNameOrId> [--all] [--limit <n>]\n  notifications markDelivered --id <notificationId>\n\n  standup [--hours <n>]\n`);
 }
 
 function parseArgs(argv) {
@@ -203,6 +203,26 @@ async function main() {
       actorName: agentId ? undefined : "missionctl",
     });
     console.log("OK");
+    return;
+  }
+
+  if (group === "standup") {
+    const hours = args.hours ? Number(args.hours) : undefined;
+    const res = await client.query(api.standup.daily, {
+      hours,
+    });
+
+    console.log(`Standup (last ${res.hours}h) — ${res.totalActivities} activities`);
+    for (const b of res.byAgent) {
+      const statuses = Object.entries(b.byStatus)
+        .sort((a, c) => c[1] - a[1])
+        .map(([k, v]) => `${k}:${v}`)
+        .join(" ");
+      console.log(`\n${b.agentName} — ${b.total}` + (statuses ? ` (status: ${statuses})` : ""));
+      for (const m of b.recentMessages) {
+        console.log(`- ${new Date(m.createdAt).toISOString()} ${m.message}`);
+      }
+    }
     return;
   }
 

@@ -13,6 +13,7 @@ import type * as liveFeed from "../liveFeed.js";
 import type * as messages from "../messages.js";
 import type * as notifications from "../notifications.js";
 import type * as seed from "../seed.js";
+import type * as standup from "../standup.js";
 import type * as tasks from "../tasks.js";
 
 import type {
@@ -27,6 +28,7 @@ declare const fullApi: ApiFromModules<{
   messages: typeof messages;
   notifications: typeof notifications;
   seed: typeof seed;
+  standup: typeof standup;
   tasks: typeof tasks;
 }>;
 
