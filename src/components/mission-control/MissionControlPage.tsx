@@ -499,6 +499,7 @@ export function MissionControlPage() {
   const review = useQuery(api.tasks.listByStatus, { status: "review" });
   const done = useQuery(api.tasks.listByStatus, { status: "done" });
   const liveFeed = useQuery(api.liveFeed.latest);
+  const undeliveredTotal = useQuery(api.notifications.totalUndelivered);
 
   const updateStatus = useMutation(api.tasks.updateStatus);
 
@@ -582,6 +583,9 @@ export function MissionControlPage() {
               Sat, Jan 31
             </div>
           </div>
+          <span className="mc-chip bg-zinc-100">
+            Notifications {undeliveredTotal ?? 0}
+          </span>
           <div className="mc-online">Online</div>
         </div>
       </header>

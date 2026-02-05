@@ -44,7 +44,7 @@ function getConvexUrl() {
 }
 
 function usage() {
-  console.log(`missionctl - Mission Control CLI\n\nEnvironment:\n  CONVEX_URL (or NEXT_PUBLIC_CONVEX_URL)\n\nCommands:\n  agent status\n  agent upsert --name <name> --role <role> --level <LEAD|SPC|INT> --status <idle|active|blocked> [--id <agentId>]\n\n  tasks list [--status <inbox|assigned|in_progress|review|done|blocked>] [--assignee <agentNameOrId>] [--limit <n>]\n  task updateStatus --id <taskId> --status <status>\n  task assign --id <taskId> --agent <agentNameOrId>\n  task unassign --id <taskId> --agent <agentNameOrId>\n\n  message post --task <taskId> --content <text> [--agent <agentNameOrId>]\n`);
+  console.log(`missionctl - Mission Control CLI\n\nEnvironment:\n  CONVEX_URL (or NEXT_PUBLIC_CONVEX_URL)\n\nCommands:\n  agent status\n  agent upsert --name <name> --role <role> --level <LEAD|SPC|INT> --status <idle|active|blocked> [--id <agentId>]\n\n  tasks list [--status <inbox|assigned|in_progress|review|done|blocked>] [--assignee <agentNameOrId>] [--limit <n>]\n  task updateStatus --id <taskId> --status <status>\n  task assign --id <taskId> --agent <agentNameOrId>\n  task unassign --id <taskId> --agent <agentNameOrId>\n\n  message post --task <taskId> --content <text> [--agent <agentNameOrId>]\n\n  notifications list --agent <agentNameOrId> [--all] [--limit <n>]\n  notifications markDelivered --id <notificationId>\n`);
 }
 
 function parseArgs(argv) {
@@ -204,6 +204,44 @@ async function main() {
     });
     console.log("OK");
     return;
+  }
+
+  if (group === "notifications") {
+    if (cmd === "list") {
+      const agent = args.agent;
+      if (!agent) {
+        usage();
+        process.exit(2);
+      }
+      const agentId = await getAgentIdByNameOrId(client, agent);
+      if (!agentId) {
+        console.error(`Unknown agent: ${agent}`);
+        process.exit(2);
+      }
+      const limit = args.limit ? Number(args.limit) : undefined;
+      const undeliveredOnly = args.all ? false : true;
+
+      const rows = await client.query(api.notifications.forAgent, {
+        agentId,
+        limit,
+        undeliveredOnly,
+      });
+      for (const n of rows) {
+        console.log(`${n._id}\t${n.delivered ? "delivered" : "new"}\t${n.content}`);
+      }
+      return;
+    }
+
+    if (cmd === "markDelivered") {
+      const id = args.id;
+      if (!id) {
+        usage();
+        process.exit(2);
+      }
+      await client.mutation(api.notifications.markDelivered, { id });
+      console.log("OK");
+      return;
+    }
   }
 
   usage();
