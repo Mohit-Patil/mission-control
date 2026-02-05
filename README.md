@@ -34,7 +34,7 @@ Optional seed (in the Convex dashboard “Functions” panel) run:
 
 - `seed:run`
 
-Seed is idempotent: it will only create missing agents/tasks, and only add starter message threads when a task thread is empty.
+Seed is idempotent: it will create a default workspace if missing, then only create missing agents/tasks inside that workspace.
 
 ### Terminal B: Next dev (port 3004)
 
@@ -45,6 +45,31 @@ npm run dev -- -p 3004
 Open:
 
 - http://localhost:3004
+
+## Workspaces
+
+Mission Control is workspace-scoped.
+
+Routes:
+
+- `/workspaces` — list + create workspaces
+- `/w/<slug>` — workspace dashboard
+- `/w/<slug>/agents` — per-workspace agent management
+
+The root route `/` redirects to the last opened workspace (stored in `localStorage`), otherwise the first workspace.
+
+### Migrating an existing deployment
+
+If you had data before workspaces existed, run the one-time migration mutation:
+
+- `migrations:migrateToWorkspaces`
+
+This will:
+
+- Create a default workspace (`slug: "default"`) if missing
+- Backfill `workspaceId` on existing agents/tasks/messages/activities/documents/notifications
+
+The migration is **idempotent** (safe to run multiple times).
 
 ## Scripts
 
@@ -69,39 +94,40 @@ A small Node CLI that talks to Convex via `CONVEX_URL`.
 # Ensure this is set (or NEXT_PUBLIC_CONVEX_URL)
 export CONVEX_URL="https://YOUR_DEPLOYMENT.convex.cloud"
 
+# Select a workspace (required)
+export WORKSPACE_SLUG="default"
+
 # Run directly
 node scripts/missionctl.mjs agent status
-
-# Or install a local bin (optional)
-npm install
-npx missionctl agent status
 ```
+
+You can also pass `--workspace <slug>` on every command.
 
 Examples:
 
 ```bash
 # Upsert an agent (by name if it exists)
-node scripts/missionctl.mjs agent upsert --name Jarvis --role "Ops" --level LEAD --status active
+node scripts/missionctl.mjs agent upsert --workspace default --name Jarvis --role "Ops" --level LEAD --status active
 
 # List tasks
-node scripts/missionctl.mjs tasks list --status inbox
-node scripts/missionctl.mjs tasks list --assignee Jarvis
+node scripts/missionctl.mjs tasks list --workspace default --status inbox
+node scripts/missionctl.mjs tasks list --workspace default --assignee Jarvis
 
 # Move a task
-node scripts/missionctl.mjs task updateStatus --id <taskId> --status in_progress
+node scripts/missionctl.mjs task updateStatus --workspace default --id <taskId> --status in_progress
 
 # Assign / unassign
-node scripts/missionctl.mjs task assign --id <taskId> --agent Jarvis
-node scripts/missionctl.mjs task unassign --id <taskId> --agent Jarvis
+node scripts/missionctl.mjs task assign --workspace default --id <taskId> --agent Jarvis
+node scripts/missionctl.mjs task unassign --workspace default --id <taskId> --agent Jarvis
 
 # Post a message
-node scripts/missionctl.mjs message post --task <taskId> --content "Ping @Jarvis for review"
+node scripts/missionctl.mjs message post --workspace default --task <taskId> --content "Ping @Jarvis for review"
 ```
 
 ## Mentions & Notifications
 
-- In messages, `@AgentName` will create a notification for that agent.
-- `@all` notifies all agents.
+- In messages, `@AgentName` will create a notification for that agent (within the same workspace).
+- `@all` notifies all agents (within the same workspace).
 
 Queries/mutations:
 
@@ -113,13 +139,13 @@ Delivery/integration plan:
 
 - A later OpenClaw cron job (or any scheduler) can poll `notifications.forAgent`, deliver via the desired channel,
   then call `notifications.markDelivered`.
-- The UI shows a global **Notifications** counter in the top bar.
+- The UI shows a workspace-scoped **Notifications** counter in the top bar.
 
 ## Daily Standup
 
 Convex query: `standup.daily` summarizes the last 24h of activities grouped by agent.
 
 ```bash
-node scripts/missionctl.mjs standup
-node scripts/missionctl.mjs standup --hours 12
+node scripts/missionctl.mjs standup --workspace default
+node scripts/missionctl.mjs standup --workspace default --hours 12
 ```
