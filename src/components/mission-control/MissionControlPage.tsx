@@ -1,7 +1,9 @@
 "use client";
 
-import { useQuery } from "convex/react";
+import { useMemo, useState } from "react";
+import { useMutation, useQuery } from "convex/react";
 import { api } from "../../../convex/_generated/api";
+import type { Id } from "../../../convex/_generated/dataModel";
 
 function Chip({ children }: { children: React.ReactNode }) {
   return (
@@ -62,15 +64,17 @@ function TaskCard({
   tags,
   assignees,
   updatedAgo,
+  onClick,
 }: {
   title: string;
   description: string;
   tags: string[];
   assignees?: { name: string }[];
   updatedAgo: string;
+  onClick?: () => void;
 }) {
   return (
-    <div className="mc-card">
+    <button className="mc-card mc-card-click" type="button" onClick={onClick}>
       <div className="text-[13px] font-semibold leading-5 text-zinc-900">{title}</div>
       <div className="mt-1 line-clamp-3 text-[11px] leading-4 text-zinc-500">{description}</div>
 
@@ -97,6 +101,79 @@ function TaskCard({
           </span>
         ))}
       </div>
+    </button>
+  );
+}
+
+function TaskDetailDrawer({
+  open,
+  task,
+  onClose,
+}: {
+  open: boolean;
+  task: { title: string; description?: string; status: string; tags: string[]; updatedAt: number } | null;
+  onClose: () => void;
+}) {
+  if (!open) return null;
+
+  return (
+    <div className="mc-drawer-root" role="dialog" aria-modal="true">
+      <button className="mc-drawer-backdrop" type="button" onClick={onClose} aria-label="Close" />
+      <aside className="mc-drawer">
+        <div className="mc-drawer-header">
+          <div className="min-w-0">
+            <div className="text-[10px] font-bold uppercase tracking-[0.22em] text-zinc-500">
+              Task Details
+            </div>
+            <div className="mt-1 truncate text-[16px] font-semibold text-zinc-900">
+              {task?.title ?? ""}
+            </div>
+          </div>
+          <button className="mc-icon-btn" type="button" onClick={onClose} aria-label="Close">
+            ✕
+          </button>
+        </div>
+
+        <div className="mc-drawer-body">
+          <div className="mc-drawer-section">
+            <div className="mc-drawer-label">Status</div>
+            <div className="mc-status-pill">{task?.status ?? ""}</div>
+          </div>
+
+          <div className="mc-drawer-section">
+            <div className="mc-drawer-label">Description</div>
+            <div className="text-[12px] leading-5 text-zinc-700 whitespace-pre-wrap">
+              {task?.description || "—"}
+            </div>
+          </div>
+
+          <div className="mc-drawer-section">
+            <div className="mc-drawer-label">Tags</div>
+            <div className="flex flex-wrap gap-1">
+              {(task?.tags ?? []).length ? (
+                (task?.tags ?? []).map((t) => (
+                  <span key={t} className="mc-tag">
+                    {t}
+                  </span>
+                ))
+              ) : (
+                <span className="text-[11px] text-zinc-400">—</span>
+              )}
+            </div>
+          </div>
+
+          <div className="mc-drawer-section">
+            <div className="mc-drawer-label">Messages</div>
+            <div className="mc-thread-placeholder">Message thread (wire to Convex next)</div>
+          </div>
+        </div>
+
+        <div className="mc-drawer-footer">
+          <div className="text-[10px] uppercase tracking-[0.22em] text-zinc-400">
+            Updated {task ? new Date(task.updatedAt).toLocaleString() : ""}
+          </div>
+        </div>
+      </aside>
     </div>
   );
 }
@@ -110,6 +187,8 @@ export function MissionControlPage() {
   const done = useQuery(api.tasks.listByStatus, { status: "done" }) || [];
   const liveFeed = useQuery(api.liveFeed.latest) || [];
 
+  const [selectedTaskId, setSelectedTaskId] = useState<Id<"tasks"> | null>(null);
+
   const columns = [
     { key: "inbox", title: "Inbox", tasks: inbox },
     { key: "assigned", title: "Assigned", tasks: assigned },
@@ -117,6 +196,15 @@ export function MissionControlPage() {
     { key: "review", title: "Review", tasks: review },
     { key: "done", title: "Done", tasks: done },
   ] as const;
+
+  const selectedTask = useMemo(() => {
+    if (!selectedTaskId) return null;
+    for (const col of columns) {
+      const t = col.tasks.find((x) => x._id === selectedTaskId);
+      if (t) return t;
+    }
+    return null;
+  }, [columns, selectedTaskId]);
 
   return (
     <div className="mc-root">
@@ -220,6 +308,7 @@ export function MissionControlPage() {
                       description={t.description ?? ""}
                       tags={t.tags ?? []}
                       updatedAgo={new Date(t.updatedAt).toLocaleDateString()}
+                      onClick={() => setSelectedTaskId(t._id)}
                     />
                   ))}
                 </div>
@@ -277,6 +366,12 @@ export function MissionControlPage() {
           </div>
         </aside>
       </div>
+
+      <TaskDetailDrawer
+        open={!!selectedTaskId}
+        task={selectedTask}
+        onClose={() => setSelectedTaskId(null)}
+      />
     </div>
   );
 }

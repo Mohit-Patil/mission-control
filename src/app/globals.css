@@ -267,6 +267,111 @@ body {
   background: #fff;
 }
 
+.mc-card-click {
+  text-align: left;
+  width: 100%;
+  cursor: pointer;
+  transition: box-shadow 120ms ease, transform 120ms ease;
+}
+
+.mc-card-click:hover {
+  box-shadow: 0 6px 18px rgba(24, 24, 27, 0.06);
+  transform: translateY(-1px);
+}
+
+.mc-drawer-root {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+}
+
+.mc-drawer-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(24, 24, 27, 0.32);
+}
+
+.mc-drawer {
+  position: absolute;
+  top: 0;
+  right: 0;
+  height: 100%;
+  width: min(480px, calc(100vw - 30px));
+  background: rgba(255, 255, 255, 0.92);
+  backdrop-filter: blur(10px);
+  border-left: 1px solid var(--mc-line);
+  display: flex;
+  flex-direction: column;
+}
+
+.mc-drawer-header {
+  padding: 14px 14px;
+  border-bottom: 1px solid var(--mc-line-2);
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.mc-drawer-body {
+  padding: 14px;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.mc-drawer-footer {
+  padding: 12px 14px;
+  border-top: 1px solid var(--mc-line-2);
+}
+
+.mc-drawer-section {
+  border: 1px solid var(--mc-line-2);
+  background: #fff;
+  border-radius: 14px;
+  padding: 12px;
+}
+
+.mc-drawer-label {
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: #71717a;
+  margin-bottom: 8px;
+}
+
+.mc-status-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--mc-line);
+  background: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  color: #3f3f46;
+}
+
+.mc-icon-btn {
+  width: 30px;
+  height: 30px;
+  border-radius: 10px;
+  border: 1px solid var(--mc-line);
+  background: #fff;
+  color: #71717a;
+  font-size: 14px;
+  line-height: 1;
+}
+
+.mc-thread-placeholder {
+  font-size: 12px;
+  color: #a1a1aa;
+}
+
 @media (max-width: 1200px) {
   .mc-grid {
     grid-template-columns: 260px 1fr;
