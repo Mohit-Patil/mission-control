@@ -22,6 +22,32 @@ export const listByStatus = query({
   },
 });
 
+export const list = query({
+  args: {
+    status: v.optional(
+      v.union(
+        v.literal("inbox"),
+        v.literal("assigned"),
+        v.literal("in_progress"),
+        v.literal("review"),
+        v.literal("done"),
+        v.literal("blocked")
+      )
+    ),
+    assigneeId: v.optional(v.id("agents")),
+    limit: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const limit = Math.min(1000, Math.max(1, args.limit ?? 200));
+    const rows = await ctx.db.query("tasks").withIndex("by_updated").order("desc").take(limit);
+    return rows.filter((t) => {
+      if (args.status && t.status !== args.status) return false;
+      if (args.assigneeId && !(t.assigneeIds ?? []).includes(args.assigneeId)) return false;
+      return true;
+    });
+  },
+});
+
 export const create = mutation({
   args: {
     title: v.string(),
