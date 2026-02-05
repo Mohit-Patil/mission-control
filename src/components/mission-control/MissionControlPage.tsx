@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "../../../convex/_generated/api";
 import type { Id } from "../../../convex/_generated/dataModel";
@@ -67,22 +67,53 @@ function AgentCard({
 }
 
 function TaskCard({
+  id,
   title,
   description,
   tags,
   assignees,
   updatedAgo,
   onClick,
+  draggable,
+  isKeyboardDragging,
+  onDragStart,
+  onKeyDown,
 }: {
+  id: string;
   title: string;
   description: string;
   tags: string[];
   assignees?: { name: string }[];
   updatedAgo: string;
   onClick?: () => void;
+  draggable?: boolean;
+  isKeyboardDragging?: boolean;
+  onDragStart?: (id: string) => void;
+  onKeyDown?: (e: React.KeyboardEvent, id: string) => void;
 }) {
   return (
-    <button className="mc-card mc-card-click" type="button" onClick={onClick}>
+    <button
+      className={
+        "mc-card mc-card-click focus:outline-none focus:ring-2 focus:ring-zinc-900/10 " +
+        (isKeyboardDragging ? "ring-2 ring-zinc-900/20" : "")
+      }
+      type="button"
+      onClick={onClick}
+      draggable={draggable}
+      onDragStart={(e) => {
+        if (!onDragStart) return;
+        e.dataTransfer.setData("text/plain", id);
+        e.dataTransfer.effectAllowed = "move";
+        onDragStart(id);
+      }}
+      onKeyDown={(e) => onKeyDown?.(e, id)}
+      aria-grabbed={isKeyboardDragging ? true : undefined}
+      title={
+        draggable
+          ? "Drag to another column, or press Space to pick up and use Arrow keys to move"
+          : undefined
+      }
+    >
       <div className="text-[13px] font-semibold leading-5 text-zinc-900">{title}</div>
       <div className="mt-1 line-clamp-3 text-[11px] leading-4 text-zinc-500">{description}</div>
 
@@ -413,8 +444,17 @@ export function MissionControlPage() {
   const done = useQuery(api.tasks.listByStatus, { status: "done" }) || [];
   const liveFeed = useQuery(api.liveFeed.latest) || [];
 
+  const updateStatus = useMutation(api.tasks.updateStatus);
+
   const [selectedTaskId, setSelectedTaskId] = useState<Id<"tasks"> | null>(null);
   const [newTaskOpen, setNewTaskOpen] = useState(false);
+
+  const [dragOverColumn, setDragOverColumn] = useState<TaskStatus | null>(null);
+  const [keyboardDrag, setKeyboardDrag] = useState<{
+    taskId: Id<"tasks">;
+    columnIndex: number;
+  } | null>(null);
+  const [a11yAnnouncement, setA11yAnnouncement] = useState<string>("");
 
   const columns = useMemo(
     () =>
@@ -440,6 +480,12 @@ export function MissionControlPage() {
   const agentNameById = useMemo(() => {
     return new Map(agents.map((a) => [a._id, a.name] as const));
   }, [agents]);
+
+  useEffect(() => {
+    if (!a11yAnnouncement) return;
+    const t = setTimeout(() => setA11yAnnouncement(""), 2000);
+    return () => clearTimeout(t);
+  }, [a11yAnnouncement]);
 
   return (
     <div className="mc-root">
@@ -531,8 +577,15 @@ export function MissionControlPage() {
           </div>
 
           <div className="mc-kanban">
-            {columns.map((col) => (
-              <div key={col.key} className="mc-column">
+            <div className="sr-only" aria-live="polite">
+              {a11yAnnouncement}
+            </div>
+
+            {columns.map((col, columnIndex) => (
+              <div
+                key={col.key}
+                className={"mc-column " + (dragOverColumn === col.key ? "outline outline-2 outline-zinc-900/10" : "")}
+              >
                 <div className="mc-column-header">
                   <div className="flex items-center gap-2">
                     <span className="mc-dot muted" aria-hidden />
@@ -542,14 +595,91 @@ export function MissionControlPage() {
                   </div>
                   <span className="mc-count">{col.tasks.length}</span>
                 </div>
-                <div className="mc-column-body">
+
+                <div
+                  className="mc-column-body"
+                  onDragOver={(e) => {
+                    e.preventDefault();
+                    setDragOverColumn(col.key);
+                  }}
+                  onDragLeave={() => {
+                    setDragOverColumn((cur) => (cur === col.key ? null : cur));
+                  }}
+                  onDrop={async (e) => {
+                    e.preventDefault();
+                    const id = e.dataTransfer.getData("text/plain");
+                    setDragOverColumn(null);
+                    if (!id) return;
+                    const taskId = id as Id<"tasks">;
+                    await updateStatus({
+                      id: taskId,
+                      status: col.key,
+                      fromHuman: true,
+                      actorName: "Human",
+                    });
+                    setA11yAnnouncement(`Moved task to ${col.title}.`);
+                  }}
+                >
                   {col.tasks.map((t) => (
                     <TaskCard
                       key={t._id}
+                      id={t._id}
                       title={t.title}
                       description={t.description ?? ""}
                       tags={t.tags ?? []}
                       updatedAgo={new Date(t.updatedAt).toLocaleDateString()}
+                      draggable
+                      isKeyboardDragging={keyboardDrag?.taskId === t._id}
+                      onDragStart={() => {
+                        setKeyboardDrag(null);
+                        setA11yAnnouncement(`Dragging ${t.title}. Drop on a column to move.`);
+                      }}
+                      onKeyDown={async (e) => {
+                        if (e.key === "Escape") {
+                          if (keyboardDrag?.taskId === t._id) {
+                            e.preventDefault();
+                            setKeyboardDrag(null);
+                            setA11yAnnouncement("Cancelled move.");
+                          }
+                          return;
+                        }
+
+                        // Space picks up / drops. Enter drops.
+                        if (e.key === " " || e.key === "Enter") {
+                          e.preventDefault();
+                          if (!keyboardDrag || keyboardDrag.taskId !== t._id) {
+                            setKeyboardDrag({ taskId: t._id, columnIndex });
+                            setA11yAnnouncement(
+                              `Picked up ${t.title}. Use Left/Right arrows to choose a column, then press Enter to drop.`
+                            );
+                          } else {
+                            const dest = columns[keyboardDrag.columnIndex];
+                            await updateStatus({
+                              id: t._id,
+                              status: dest.key,
+                              fromHuman: true,
+                              actorName: "Human",
+                            });
+                            setKeyboardDrag(null);
+                            setA11yAnnouncement(`Moved ${t.title} to ${dest.title}.`);
+                          }
+                          return;
+                        }
+
+                        if (keyboardDrag?.taskId === t._id) {
+                          if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
+                            e.preventDefault();
+                            const delta = e.key === "ArrowLeft" ? -1 : 1;
+                            setKeyboardDrag((cur) => {
+                              if (!cur) return cur;
+                              const nextIndex = Math.max(0, Math.min(columns.length - 1, cur.columnIndex + delta));
+                              const nextCol = columns[nextIndex];
+                              setA11yAnnouncement(`Target column: ${nextCol.title}.`);
+                              return { ...cur, columnIndex: nextIndex };
+                            });
+                          }
+                        }
+                      }}
                       onClick={() => setSelectedTaskId(t._id)}
                     />
                   ))}
