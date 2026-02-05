@@ -1,4 +1,7 @@
-import { agents, columns, liveFeed } from "@/components/mission-control/mock-data";
+"use client";
+
+import { useQuery } from "convex/react";
+import { api } from "../../../convex/_generated/api";
 
 function Chip({ children }: { children: React.ReactNode }) {
   return (
@@ -99,6 +102,22 @@ function TaskCard({
 }
 
 export function MissionControlPage() {
+  const agents = useQuery(api.agents.list) || [];
+  const inbox = useQuery(api.tasks.listByStatus, { status: "inbox" }) || [];
+  const assigned = useQuery(api.tasks.listByStatus, { status: "assigned" }) || [];
+  const inProgress = useQuery(api.tasks.listByStatus, { status: "in_progress" }) || [];
+  const review = useQuery(api.tasks.listByStatus, { status: "review" }) || [];
+  const done = useQuery(api.tasks.listByStatus, { status: "done" }) || [];
+  const liveFeed = useQuery(api.liveFeed.latest) || [];
+
+  const columns = [
+    { key: "inbox", title: "Inbox", tasks: inbox },
+    { key: "assigned", title: "Assigned", tasks: assigned },
+    { key: "in_progress", title: "In Progress", tasks: inProgress },
+    { key: "review", title: "Review", tasks: review },
+    { key: "done", title: "Done", tasks: done },
+  ] as const;
+
   return (
     <div className="mc-root">
       {/* Top bar */}
@@ -151,16 +170,16 @@ export function MissionControlPage() {
               <span className="mc-dot muted" aria-hidden />
               <div className="mc-panel-title">Agents</div>
             </div>
-            <Chip>12</Chip>
+            <Chip>{agents.length}</Chip>
           </div>
           <div className="mc-panel-body flex flex-col gap-2">
             {agents.slice(0, 9).map((a) => (
               <AgentCard
-                key={a.id}
+                key={a._id}
                 name={a.name}
                 role={a.role}
                 level={a.level}
-                status={a.status}
+                status={a.status === "active" ? "WORKING" : a.status.toUpperCase()}
               />
             ))}
           </div>
@@ -191,17 +210,16 @@ export function MissionControlPage() {
                       {col.title}
                     </div>
                   </div>
-                  <span className="mc-count">{col.count}</span>
+                  <span className="mc-count">{col.tasks.length}</span>
                 </div>
                 <div className="mc-column-body">
                   {col.tasks.map((t) => (
                     <TaskCard
-                      key={t.id}
+                      key={t._id}
                       title={t.title}
-                      description={t.description}
-                      tags={t.tags}
-                      assignees={t.assignees}
-                      updatedAgo={t.updatedAgo}
+                      description={t.description ?? ""}
+                      tags={t.tags ?? []}
+                      updatedAgo={new Date(t.updatedAt).toLocaleDateString()}
                     />
                   ))}
                 </div>
@@ -245,14 +263,12 @@ export function MissionControlPage() {
 
             <div className="mt-4 flex flex-col gap-3">
               {liveFeed.map((e) => (
-                <div key={e.id} className="mc-feed-item">
+                <div key={e._id} className="mc-feed-item">
                   <div className="mc-feed-avatar" aria-hidden />
                   <div className="min-w-0">
-                    <div className="text-[12px] text-zinc-800">
-                      <span className="font-semibold">{e.who}</span> {e.action} {e.what}
-                    </div>
+                    <div className="text-[12px] text-zinc-800">{e.message}</div>
                     <div className="mt-1 text-[10px] uppercase tracking-[0.22em] text-zinc-400">
-                      {e.when}
+                      {new Date(e.createdAt).toLocaleString()}
                     </div>
                   </div>
                 </div>
