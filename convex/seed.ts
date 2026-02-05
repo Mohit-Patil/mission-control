@@ -1,3 +1,4 @@
+import type { Id } from "./_generated/dataModel";
 import { mutation } from "./_generated/server";
 
 export const run = mutation({
@@ -19,7 +20,7 @@ export const run = mutation({
       { name: "Wong", role: "Documentation", level: "SPC" as const, status: "active" as const },
     ];
 
-    const nameToId = new Map<string, any>();
+    const nameToId = new Map<string, Id<"agents">>();
 
     for (const a of agentsToEnsure) {
       const existing = await ctx.db
@@ -85,7 +86,7 @@ export const run = mutation({
       },
     ];
 
-    const titleToId = new Map<string, any>();
+    const titleToId = new Map<string, Id<"tasks">>();
 
     for (const t of tasksToEnsure) {
       const existing = await ctx.db
@@ -98,7 +99,9 @@ export const run = mutation({
         continue;
       }
 
-      const assigneeIds = t.assignees.map((n) => nameToId.get(n)).filter(Boolean);
+      const assigneeIds = t.assignees
+        .map((n) => nameToId.get(n))
+        .filter((x): x is Id<"agents"> => x !== undefined);
       const id = await ctx.db.insert("tasks", {
         title: t.title,
         description: t.description,

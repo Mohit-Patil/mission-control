@@ -5,6 +5,14 @@ import { useMutation, useQuery } from "convex/react";
 import { api } from "../../../convex/_generated/api";
 import type { Id } from "../../../convex/_generated/dataModel";
 
+type TaskStatus =
+  | "inbox"
+  | "assigned"
+  | "in_progress"
+  | "review"
+  | "done"
+  | "blocked";
+
 function Chip({ children }: { children: React.ReactNode }) {
   return (
     <span className="mc-chip text-[10px] uppercase tracking-[0.16em] text-zinc-600">
@@ -118,7 +126,7 @@ function NewTaskModal({
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [tags, setTags] = useState("");
-  const [status, setStatus] = useState<string>("");
+  const [status, setStatus] = useState<TaskStatus | "">("");
 
   if (!open) return null;
 
@@ -154,7 +162,7 @@ function NewTaskModal({
               title: cleanTitle,
               description: description.trim() ? description.trim() : undefined,
               tags: tagList.length ? tagList : undefined,
-              status: status ? (status as any) : undefined,
+              status: status || undefined,
             });
 
             setTitle("");
@@ -199,7 +207,11 @@ function NewTaskModal({
 
           <div className="mc-form-row">
             <label className="mc-form-label">Status</label>
-            <select className="mc-input" value={status} onChange={(e) => setStatus(e.target.value)}>
+            <select
+              className="mc-input"
+              value={status}
+              onChange={(e) => setStatus(e.target.value as TaskStatus | "")}
+            >
               <option value="">Inbox (default)</option>
               <option value="inbox">Inbox</option>
               <option value="assigned">Assigned</option>
@@ -239,10 +251,7 @@ function TaskDetailDrawer({
   agentNameById: Map<string, string>;
   onClose: () => void;
 }) {
-  const messages = useQuery(
-    api.messages.listByTask,
-    open && taskId ? { taskId } : ("skip" as any)
-  );
+  const messages = useQuery(api.messages.listByTask, open && taskId ? { taskId } : "skip");
   const createMessage = useMutation(api.messages.create);
   const updateStatus = useMutation(api.tasks.updateStatus);
   const [draft, setDraft] = useState("");
@@ -276,13 +285,13 @@ function TaskDetailDrawer({
                 value={task?.status ?? "inbox"}
                 onChange={async (e) => {
                   if (!taskId) return;
-                  const next = e.target.value as any;
+                  const next = e.target.value as TaskStatus;
                   await updateStatus({
                     id: taskId,
                     status: next,
                     fromHuman: true,
                     actorName: "Human",
-                  } as any);
+                  });
                 }}
               >
                 <option value="inbox">Inbox</option>
@@ -407,13 +416,17 @@ export function MissionControlPage() {
   const [selectedTaskId, setSelectedTaskId] = useState<Id<"tasks"> | null>(null);
   const [newTaskOpen, setNewTaskOpen] = useState(false);
 
-  const columns = [
-    { key: "inbox", title: "Inbox", tasks: inbox },
-    { key: "assigned", title: "Assigned", tasks: assigned },
-    { key: "in_progress", title: "In Progress", tasks: inProgress },
-    { key: "review", title: "Review", tasks: review },
-    { key: "done", title: "Done", tasks: done },
-  ] as const;
+  const columns = useMemo(
+    () =>
+      [
+        { key: "inbox", title: "Inbox", tasks: inbox },
+        { key: "assigned", title: "Assigned", tasks: assigned },
+        { key: "in_progress", title: "In Progress", tasks: inProgress },
+        { key: "review", title: "Review", tasks: review },
+        { key: "done", title: "Done", tasks: done },
+      ] as const,
+    [inbox, assigned, inProgress, review, done]
+  );
 
   const selectedTask = useMemo(() => {
     if (!selectedTaskId) return null;
