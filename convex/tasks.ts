@@ -72,13 +72,22 @@ export const updateStatus = mutation({
       v.literal("done"),
       v.literal("blocked")
     ),
+    fromAgentId: v.optional(v.id("agents")),
+    fromHuman: v.optional(v.boolean()),
+    actorName: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const now = Date.now();
     await ctx.db.patch(args.id, { status: args.status, updatedAt: now });
+
+    const task = await ctx.db.get(args.id);
+    const agent = args.fromAgentId ? await ctx.db.get(args.fromAgentId) : null;
+    const actor = agent?.name ?? (args.fromHuman ? args.actorName ?? "Human" : "System");
+
     await ctx.db.insert("activities", {
       type: "task_status",
-      message: `Task moved to ${args.status}`,
+      agentId: agent?._id,
+      message: `${actor} moved “${task?.title ?? "(unknown task)"}” to ${args.status}`,
       createdAt: now,
     });
   },

@@ -244,6 +244,7 @@ function TaskDetailDrawer({
     open && taskId ? { taskId } : ("skip" as any)
   );
   const createMessage = useMutation(api.messages.create);
+  const updateStatus = useMutation(api.tasks.updateStatus);
   const [draft, setDraft] = useState("");
 
   if (!open) return null;
@@ -269,7 +270,32 @@ function TaskDetailDrawer({
         <div className="mc-drawer-body">
           <div className="mc-drawer-section">
             <div className="mc-drawer-label">Status</div>
-            <div className="mc-status-pill">{task?.status ?? ""}</div>
+            <div className="flex items-center gap-8">
+              <select
+                className="mc-input"
+                value={task?.status ?? "inbox"}
+                onChange={async (e) => {
+                  if (!taskId) return;
+                  const next = e.target.value as any;
+                  await updateStatus({
+                    id: taskId,
+                    status: next,
+                    fromHuman: true,
+                    actorName: "Human",
+                  } as any);
+                }}
+              >
+                <option value="inbox">Inbox</option>
+                <option value="assigned">Assigned</option>
+                <option value="in_progress">In Progress</option>
+                <option value="review">Review</option>
+                <option value="done">Done</option>
+                <option value="blocked">Blocked</option>
+              </select>
+              <div className="ml-auto text-[10px] uppercase tracking-[0.22em] text-zinc-400">
+                Click to move
+              </div>
+            </div>
           </div>
 
           <div className="mc-drawer-section">
