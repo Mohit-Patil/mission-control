@@ -1,9 +1,11 @@
 "use client";
 
+import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "../../../convex/_generated/api";
-import type { Id } from "../../../convex/_generated/dataModel";
+import type { Doc, Id } from "../../../convex/_generated/dataModel";
 
 type TaskStatus =
   | "inbox"
@@ -146,10 +148,12 @@ function TaskCard({
 
 function NewTaskModal({
   open,
+  workspaceId,
   onClose,
   onCreated,
 }: {
   open: boolean;
+  workspaceId: Id<"workspaces">;
   onClose: () => void;
   onCreated: (id: Id<"tasks">) => void;
 }) {
@@ -190,6 +194,7 @@ function NewTaskModal({
               .filter(Boolean);
 
             const id = await createTask({
+              workspaceId,
               title: cleanTitle,
               description: description.trim() ? description.trim() : undefined,
               tags: tagList.length ? tagList : undefined,
@@ -269,6 +274,7 @@ function NewTaskModal({
 
 function TaskDetailDrawer({
   open,
+  workspaceId,
   taskId,
   task,
   agents,
@@ -276,23 +282,17 @@ function TaskDetailDrawer({
   onClose,
 }: {
   open: boolean;
+  workspaceId: Id<"workspaces">;
   taskId: Id<"tasks"> | null;
-  task:
-    | {
-        _id: Id<"tasks">;
-        title: string;
-        description?: string;
-        status: string;
-        tags: string[];
-        assigneeIds: Id<"agents">[];
-        updatedAt: number;
-      }
-    | null;
+  task: Doc<"tasks"> | null;
   agents: { _id: Id<"agents">; name: string }[];
   agentNameById: Map<string, string>;
   onClose: () => void;
 }) {
-  const messages = useQuery(api.messages.listByTask, open && taskId ? { taskId } : "skip");
+  const messages = useQuery(
+    api.messages.listByTask,
+    open && taskId ? { workspaceId, taskId } : "skip"
+  );
   const createMessage = useMutation(api.messages.create);
   const updateStatus = useMutation(api.tasks.updateStatus);
   const setAssignees = useMutation(api.tasks.setAssignees);
@@ -329,6 +329,7 @@ function TaskDetailDrawer({
                   if (!taskId) return;
                   const next = e.target.value as TaskStatus;
                   await updateStatus({
+                    workspaceId,
                     id: taskId,
                     status: next,
                     fromHuman: true,
@@ -380,6 +381,7 @@ function TaskDetailDrawer({
                           ? task.assigneeIds.filter((x) => x !== a._id)
                           : [...task.assigneeIds, a._id];
                         await setAssignees({
+                          workspaceId,
                           id: taskId,
                           assigneeIds: next,
                           fromHuman: true,
@@ -450,6 +452,7 @@ function TaskDetailDrawer({
                 const content = draft.trim();
                 if (!content) return;
                 await createMessage({
+                  workspaceId,
                   taskId,
                   content,
                   fromHuman: true,
@@ -491,15 +494,23 @@ function TaskDetailDrawer({
   );
 }
 
-export function MissionControlPage() {
-  const agents = useQuery(api.agents.list);
-  const inbox = useQuery(api.tasks.listByStatus, { status: "inbox" });
-  const assigned = useQuery(api.tasks.listByStatus, { status: "assigned" });
-  const inProgress = useQuery(api.tasks.listByStatus, { status: "in_progress" });
-  const review = useQuery(api.tasks.listByStatus, { status: "review" });
-  const done = useQuery(api.tasks.listByStatus, { status: "done" });
-  const liveFeed = useQuery(api.liveFeed.latest);
-  const undeliveredTotal = useQuery(api.notifications.totalUndelivered);
+export function MissionControlPage({ workspace }: { workspace: Doc<"workspaces"> }) {
+  const router = useRouter();
+  const workspaces = useQuery(api.workspaces.list);
+
+  const agents = useQuery(api.agents.list, { workspaceId: workspace._id });
+  const inbox = useQuery(api.tasks.listByStatus, { workspaceId: workspace._id, status: "inbox" });
+  const assigned = useQuery(api.tasks.listByStatus, { workspaceId: workspace._id, status: "assigned" });
+  const inProgress = useQuery(api.tasks.listByStatus, {
+    workspaceId: workspace._id,
+    status: "in_progress",
+  });
+  const review = useQuery(api.tasks.listByStatus, { workspaceId: workspace._id, status: "review" });
+  const done = useQuery(api.tasks.listByStatus, { workspaceId: workspace._id, status: "done" });
+  const liveFeed = useQuery(api.liveFeed.latest, { workspaceId: workspace._id });
+  const undeliveredTotal = useQuery(api.notifications.totalUndelivered, {
+    workspaceId: workspace._id,
+  });
 
   const updateStatus = useMutation(api.tasks.updateStatus);
 
@@ -538,6 +549,9 @@ export function MissionControlPage() {
     return new Map((agents ?? []).map((a) => [a._id, a.name] as const));
   }, [agents]);
 
+  const activeAgents = useMemo(() => (agents ?? []).filter((a) => a.status === "active").length, [agents]);
+  const tasksInQueue = useMemo(() => columns.reduce((sum, c) => sum + c.tasks.length, 0), [columns]);
+
   useEffect(() => {
     if (!a11yAnnouncement) return;
     const t = setTimeout(() => setA11yAnnouncement(""), 2000);
@@ -555,37 +569,62 @@ export function MissionControlPage() {
               MISSION CONTROL
             </div>
           </div>
-          <span className="mc-chip bg-zinc-100">SiteGPT</span>
+
+          <select
+            className="mc-input h-8 py-0 text-[12px]"
+            value={workspace.slug}
+            onChange={(e) => {
+              const slug = e.target.value;
+              window.localStorage.setItem("mc:lastWorkspaceSlug", slug);
+              router.push(`/w/${slug}`);
+            }}
+            aria-label="Workspace"
+          >
+            {(workspaces ?? []).map((w) => (
+              <option key={w._id} value={w.slug}>
+                {w.name}
+              </option>
+            ))}
+          </select>
+
+          <Link className="mc-chip bg-zinc-100" href={`/w/${workspace.slug}`}>
+            {workspace.slug}
+          </Link>
         </div>
 
         <div className="flex items-center gap-10">
           <div className="text-center">
-            <div className="text-[18px] font-semibold text-zinc-900">11</div>
-            <div className="text-[9px] uppercase tracking-[0.22em] text-zinc-400">
-              Agents Active
-            </div>
+            <div className="text-[18px] font-semibold text-zinc-900">{activeAgents}</div>
+            <div className="text-[9px] uppercase tracking-[0.22em] text-zinc-400">Agents Active</div>
           </div>
           <div className="text-center">
-            <div className="text-[18px] font-semibold text-zinc-900">35</div>
-            <div className="text-[9px] uppercase tracking-[0.22em] text-zinc-400">
-              Tasks In Queue
-            </div>
+            <div className="text-[18px] font-semibold text-zinc-900">{tasksInQueue}</div>
+            <div className="text-[9px] uppercase tracking-[0.22em] text-zinc-400">Tasks In Queue</div>
           </div>
         </div>
 
         <div className="flex items-center gap-3">
-          <button className="mc-pill bg-zinc-100 text-zinc-700" type="button">
-            Docs
-          </button>
+          <Link className="mc-pill bg-zinc-100 text-zinc-700" href={`/w/${workspace.slug}/agents`}>
+            Agents
+          </Link>
+          <Link className="mc-pill bg-zinc-100 text-zinc-700" href="/workspaces">
+            Workspaces
+          </Link>
+
           <div className="text-right">
-            <div className="text-[12px] font-semibold text-zinc-900">12:30:58</div>
+            <div className="text-[12px] font-semibold text-zinc-900">
+              {new Date().toLocaleTimeString()}
+            </div>
             <div className="text-[9px] uppercase tracking-[0.22em] text-zinc-400">
-              Sat, Jan 31
+              {new Date().toLocaleDateString(undefined, {
+                weekday: "short",
+                month: "short",
+                day: "2-digit",
+              })}
             </div>
           </div>
-          <span className="mc-chip bg-zinc-100">
-            Notifications {undeliveredTotal ?? 0}
-          </span>
+
+          <span className="mc-chip bg-zinc-100">Notifications {undeliveredTotal ?? 0}</span>
           <div className="mc-online">Online</div>
         </div>
       </header>
@@ -632,7 +671,7 @@ export function MissionControlPage() {
               <Chip>
                 <span className="mc-mini-avatar" aria-hidden /> 1
               </Chip>
-              <Chip>35 active</Chip>
+              <Chip>{tasksInQueue} active</Chip>
             </div>
           </div>
 
@@ -644,7 +683,10 @@ export function MissionControlPage() {
             {columns.map((col, columnIndex) => (
               <div
                 key={col.key}
-                className={"mc-column " + (dragOverColumn === col.key ? "outline outline-2 outline-zinc-900/10" : "")}
+                className={
+                  "mc-column " +
+                  (dragOverColumn === col.key ? "outline outline-2 outline-zinc-900/10" : "")
+                }
               >
                 <div className="mc-column-header">
                   <div className="flex items-center gap-2">
@@ -672,6 +714,7 @@ export function MissionControlPage() {
                     if (!id) return;
                     const taskId = id as Id<"tasks">;
                     await updateStatus({
+                      workspaceId: workspace._id,
                       id: taskId,
                       status: col.key,
                       fromHuman: true,
@@ -718,6 +761,7 @@ export function MissionControlPage() {
                           } else {
                             const dest = columns[keyboardDrag.columnIndex];
                             await updateStatus({
+                              workspaceId: workspace._id,
                               id: t._id,
                               status: dest.key,
                               fromHuman: true,
@@ -735,7 +779,10 @@ export function MissionControlPage() {
                             const delta = e.key === "ArrowLeft" ? -1 : 1;
                             setKeyboardDrag((cur) => {
                               if (!cur) return cur;
-                              const nextIndex = Math.max(0, Math.min(columns.length - 1, cur.columnIndex + delta));
+                              const nextIndex = Math.max(
+                                0,
+                                Math.min(columns.length - 1, cur.columnIndex + delta)
+                              );
                               const nextCol = columns[nextIndex];
                               setA11yAnnouncement(`Target column: ${nextCol.title}.`);
                               return { ...cur, columnIndex: nextIndex };
@@ -774,15 +821,11 @@ export function MissionControlPage() {
 
             <div className="mt-4 flex flex-wrap gap-2">
               <span className="mc-filter active">All Agents</span>
-              <span className="mc-filter">Jarvis</span>
-              <span className="mc-filter">Shuri</span>
-              <span className="mc-filter">Fury</span>
-              <span className="mc-filter">Vision</span>
-              <span className="mc-filter">Loki</span>
-              <span className="mc-filter">Wanda</span>
-              <span className="mc-filter">Friday</span>
-              <span className="mc-filter">Pepper</span>
-              <span className="mc-filter">Quill</span>
+              {(agents ?? []).slice(0, 9).map((a) => (
+                <span key={a._id} className="mc-filter">
+                  {a.name}
+                </span>
+              ))}
             </div>
 
             <div className="mt-4 flex flex-col gap-3">
@@ -804,12 +847,14 @@ export function MissionControlPage() {
 
       <NewTaskModal
         open={newTaskOpen}
+        workspaceId={workspace._id}
         onClose={() => setNewTaskOpen(false)}
         onCreated={(id) => setSelectedTaskId(id)}
       />
 
       <TaskDetailDrawer
         open={!!selectedTaskId}
+        workspaceId={workspace._id}
         taskId={selectedTaskId}
         task={selectedTask}
         agents={agents ?? []}
