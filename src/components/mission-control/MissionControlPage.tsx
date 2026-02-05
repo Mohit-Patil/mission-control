@@ -271,20 +271,31 @@ function TaskDetailDrawer({
   open,
   taskId,
   task,
+  agents,
   agentNameById,
   onClose,
 }: {
   open: boolean;
   taskId: Id<"tasks"> | null;
   task:
-    | { _id: Id<"tasks">; title: string; description?: string; status: string; tags: string[]; updatedAt: number }
+    | {
+        _id: Id<"tasks">;
+        title: string;
+        description?: string;
+        status: string;
+        tags: string[];
+        assigneeIds: Id<"agents">[];
+        updatedAt: number;
+      }
     | null;
+  agents: { _id: Id<"agents">; name: string }[];
   agentNameById: Map<string, string>;
   onClose: () => void;
 }) {
   const messages = useQuery(api.messages.listByTask, open && taskId ? { taskId } : "skip");
   const createMessage = useMutation(api.messages.create);
   const updateStatus = useMutation(api.tasks.updateStatus);
+  const setAssignees = useMutation(api.tasks.setAssignees);
   const [draft, setDraft] = useState("");
 
   if (!open) return null;
@@ -335,6 +346,51 @@ function TaskDetailDrawer({
               <div className="ml-auto text-[10px] uppercase tracking-[0.22em] text-zinc-400">
                 Click to move
               </div>
+            </div>
+          </div>
+
+          <div className="mc-drawer-section">
+            <div className="mc-drawer-label">Assignees</div>
+            <div className="flex flex-wrap gap-1">
+              {(task?.assigneeIds ?? []).length ? (
+                (task?.assigneeIds ?? []).map((aid) => (
+                  <span key={aid} className="mc-tag">
+                    {agentNameById.get(aid) ?? "Agent"}
+                  </span>
+                ))
+              ) : (
+                <span className="text-[11px] text-zinc-400">—</span>
+              )}
+            </div>
+
+            <div className="mt-3 grid grid-cols-2 gap-2">
+              {agents.map((a) => {
+                const checked = (task?.assigneeIds ?? []).includes(a._id);
+                return (
+                  <label
+                    key={a._id}
+                    className="flex cursor-pointer items-center gap-2 rounded-md border border-zinc-200 bg-white px-2 py-2 text-[12px] text-zinc-700 hover:bg-zinc-50"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={async () => {
+                        if (!taskId || !task) return;
+                        const next = checked
+                          ? task.assigneeIds.filter((x) => x !== a._id)
+                          : [...task.assigneeIds, a._id];
+                        await setAssignees({
+                          id: taskId,
+                          assigneeIds: next,
+                          fromHuman: true,
+                          actorName: "Human",
+                        });
+                      }}
+                    />
+                    <span className="truncate">{a.name}</span>
+                  </label>
+                );
+              })}
             </div>
           </div>
 
@@ -436,13 +492,13 @@ function TaskDetailDrawer({
 }
 
 export function MissionControlPage() {
-  const agents = useQuery(api.agents.list) || [];
-  const inbox = useQuery(api.tasks.listByStatus, { status: "inbox" }) || [];
-  const assigned = useQuery(api.tasks.listByStatus, { status: "assigned" }) || [];
-  const inProgress = useQuery(api.tasks.listByStatus, { status: "in_progress" }) || [];
-  const review = useQuery(api.tasks.listByStatus, { status: "review" }) || [];
-  const done = useQuery(api.tasks.listByStatus, { status: "done" }) || [];
-  const liveFeed = useQuery(api.liveFeed.latest) || [];
+  const agents = useQuery(api.agents.list);
+  const inbox = useQuery(api.tasks.listByStatus, { status: "inbox" });
+  const assigned = useQuery(api.tasks.listByStatus, { status: "assigned" });
+  const inProgress = useQuery(api.tasks.listByStatus, { status: "in_progress" });
+  const review = useQuery(api.tasks.listByStatus, { status: "review" });
+  const done = useQuery(api.tasks.listByStatus, { status: "done" });
+  const liveFeed = useQuery(api.liveFeed.latest);
 
   const updateStatus = useMutation(api.tasks.updateStatus);
 
@@ -459,11 +515,11 @@ export function MissionControlPage() {
   const columns = useMemo(
     () =>
       [
-        { key: "inbox", title: "Inbox", tasks: inbox },
-        { key: "assigned", title: "Assigned", tasks: assigned },
-        { key: "in_progress", title: "In Progress", tasks: inProgress },
-        { key: "review", title: "Review", tasks: review },
-        { key: "done", title: "Done", tasks: done },
+        { key: "inbox", title: "Inbox", tasks: inbox ?? [] },
+        { key: "assigned", title: "Assigned", tasks: assigned ?? [] },
+        { key: "in_progress", title: "In Progress", tasks: inProgress ?? [] },
+        { key: "review", title: "Review", tasks: review ?? [] },
+        { key: "done", title: "Done", tasks: done ?? [] },
       ] as const,
     [inbox, assigned, inProgress, review, done]
   );
@@ -478,7 +534,7 @@ export function MissionControlPage() {
   }, [columns, selectedTaskId]);
 
   const agentNameById = useMemo(() => {
-    return new Map(agents.map((a) => [a._id, a.name] as const));
+    return new Map((agents ?? []).map((a) => [a._id, a.name] as const));
   }, [agents]);
 
   useEffect(() => {
@@ -539,10 +595,10 @@ export function MissionControlPage() {
               <span className="mc-dot muted" aria-hidden />
               <div className="mc-panel-title">Agents</div>
             </div>
-            <Chip>{agents.length}</Chip>
+            <Chip>{agents?.length ?? 0}</Chip>
           </div>
           <div className="mc-panel-body flex flex-col gap-2">
-            {agents.slice(0, 9).map((a) => (
+            {(agents ?? []).slice(0, 9).map((a) => (
               <AgentCard
                 key={a._id}
                 name={a.name}
@@ -627,6 +683,9 @@ export function MissionControlPage() {
                       title={t.title}
                       description={t.description ?? ""}
                       tags={t.tags ?? []}
+                      assignees={(t.assigneeIds ?? []).map((aid) => ({
+                        name: agentNameById.get(aid) ?? "Agent",
+                      }))}
                       updatedAgo={new Date(t.updatedAt).toLocaleDateString()}
                       draggable
                       isKeyboardDragging={keyboardDrag?.taskId === t._id}
@@ -723,7 +782,7 @@ export function MissionControlPage() {
             </div>
 
             <div className="mt-4 flex flex-col gap-3">
-              {liveFeed.map((e) => (
+              {(liveFeed ?? []).map((e) => (
                 <div key={e._id} className="mc-feed-item">
                   <div className="mc-feed-avatar" aria-hidden />
                   <div className="min-w-0">
@@ -749,6 +808,7 @@ export function MissionControlPage() {
         open={!!selectedTaskId}
         taskId={selectedTaskId}
         task={selectedTask}
+        agents={agents ?? []}
         agentNameById={agentNameById}
         onClose={() => setSelectedTaskId(null)}
       />
