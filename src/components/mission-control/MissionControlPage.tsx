@@ -15,6 +15,57 @@ type TaskStatus =
   | "done"
   | "blocked";
 
+type TaskStatusFilter = "all" | TaskStatus;
+type LiveFeedFilter = "all" | "tasks" | "comments" | "decisions" | "docs" | "status";
+type LiveFeedWindowFilter = "all" | "6h" | "24h" | "7d";
+
+const TASK_STATUS_META: ReadonlyArray<{ key: TaskStatus; title: string }> = [
+  { key: "inbox", title: "Inbox" },
+  { key: "assigned", title: "Assigned" },
+  { key: "in_progress", title: "In Progress" },
+  { key: "review", title: "Review" },
+  { key: "done", title: "Done" },
+  { key: "blocked", title: "Blocked" },
+];
+
+const LIVE_FEED_FILTERS: ReadonlyArray<{ key: LiveFeedFilter; label: string }> = [
+  { key: "all", label: "All" },
+  { key: "tasks", label: "Tasks" },
+  { key: "comments", label: "Comments" },
+  { key: "decisions", label: "Decisions" },
+  { key: "docs", label: "Docs" },
+  { key: "status", label: "Status" },
+];
+
+const LIVE_FEED_WINDOWS: ReadonlyArray<{ key: LiveFeedWindowFilter; label: string }> = [
+  { key: "all", label: "All Time" },
+  { key: "6h", label: "6h" },
+  { key: "24h", label: "24h" },
+  { key: "7d", label: "7d" },
+];
+
+function matchesLiveFeedType(type: string, filter: LiveFeedFilter) {
+  if (filter === "all") return true;
+  if (filter === "comments") return type === "comment";
+  if (filter === "tasks") return type === "task_created" || type === "task_assignees";
+  if (filter === "status") return type.endsWith("status") || type.includes("_status");
+  if (filter === "decisions") return type.includes("decision");
+  if (filter === "docs") return type.includes("doc");
+  return true;
+}
+
+function formatLiveFeedType(type: string) {
+  return type
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
+function matchesLiveFeedWindow(createdAt: number, filter: LiveFeedWindowFilter, nowMs: number) {
+  if (filter === "all") return true;
+  const hours = filter === "6h" ? 6 : filter === "24h" ? 24 : 24 * 7;
+  return nowMs - createdAt <= hours * 60 * 60 * 1000;
+}
+
 function Chip({ children }: { children: React.ReactNode }) {
   return (
     <span className="mc-chip text-[10px] uppercase tracking-[0.16em] text-zinc-600">
@@ -23,16 +74,54 @@ function Chip({ children }: { children: React.ReactNode }) {
   );
 }
 
-function Pill({ children, active }: { children: React.ReactNode; active?: boolean }) {
+function PanelState({
+  kind,
+  title,
+  description,
+}: {
+  kind: "loading" | "empty";
+  title: string;
+  description: string;
+}) {
+  return (
+    <div className={kind === "loading" ? "mc-loading" : "mc-empty"} role="status" aria-live="polite">
+      <div className="mc-state-head">
+        <span
+          className={
+            "mc-state-indicator " + (kind === "loading" ? "mc-state-indicator-loading" : "mc-state-indicator-empty")
+          }
+          aria-hidden
+        />
+        <div>
+          <div className="mc-state-kicker">{kind === "loading" ? "Loading" : "Empty State"}</div>
+          <div className="mc-state-title">{title}</div>
+        </div>
+      </div>
+      <div className="mc-state-copy">{description}</div>
+    </div>
+  );
+}
+
+function Pill({
+  children,
+  active,
+  onClick,
+}: {
+  children: React.ReactNode;
+  active?: boolean;
+  onClick?: () => void;
+}) {
   return (
     <button
       className={
-        "mc-pill " +
+        "mc-pill mc-pill-segment " +
         (active
           ? "bg-white text-zinc-900 shadow-sm"
           : "bg-transparent text-zinc-500 hover:text-zinc-700")
       }
       type="button"
+      aria-pressed={active}
+      onClick={onClick}
     >
       {children}
     </button>
@@ -95,10 +184,7 @@ function TaskCard({
 }) {
   return (
     <button
-      className={
-        "mc-card mc-card-click focus:outline-none focus:ring-2 focus:ring-zinc-900/10 " +
-        (isKeyboardDragging ? "ring-2 ring-zinc-900/20" : "")
-      }
+      className={"mc-card mc-card-click " + (isKeyboardDragging ? "mc-card-dragging" : "")}
       type="button"
       onClick={onClick}
       draggable={draggable}
@@ -115,23 +201,24 @@ function TaskCard({
           ? "Drag to another column, or press Space to pick up and use Arrow keys to move"
           : undefined
       }
+      aria-label={`Task ${title}`}
     >
-      <div className="text-[13px] font-semibold leading-5 text-zinc-900">{title}</div>
-      <div className="mt-1 line-clamp-3 text-[11px] leading-4 text-zinc-500">{description}</div>
+      <div className="text-[14px] font-semibold leading-5 text-zinc-900">{title}</div>
+      <div className="mt-1 line-clamp-3 text-[12px] leading-5 text-zinc-600">{description}</div>
 
       {assignees?.length ? (
         <div className="mt-3 flex items-center gap-2">
           {assignees.map((a) => (
-            <div key={a.name} className="flex items-center gap-1 text-[11px] text-zinc-600">
+            <div key={a.name} className="flex items-center gap-1 text-[12px] text-zinc-700">
               <span className="mc-mini-avatar" aria-hidden />
               <span>{a.name}</span>
             </div>
           ))}
-          <span className="ml-auto text-[10px] text-zinc-400">{updatedAgo}</span>
+          <span className="ml-auto text-[11px] text-zinc-500">{updatedAgo}</span>
         </div>
       ) : (
         <div className="mt-3 flex items-center">
-          <span className="text-[10px] text-zinc-400">{updatedAgo}</span>
+          <span className="text-[11px] text-zinc-500">{updatedAgo}</span>
         </div>
       )}
 
@@ -162,6 +249,10 @@ function NewTaskModal({
   const [description, setDescription] = useState("");
   const [tags, setTags] = useState("");
   const [status, setStatus] = useState<TaskStatus | "">("");
+  const titleId = "new-task-title";
+  const descriptionId = "new-task-description";
+  const tagsId = "new-task-tags";
+  const statusId = "new-task-status";
 
   if (!open) return null;
 
@@ -210,8 +301,11 @@ function NewTaskModal({
           }}
         >
           <div className="mc-form-row">
-            <label className="mc-form-label">Title</label>
+            <label className="mc-form-label" htmlFor={titleId}>
+              Title
+            </label>
             <input
+              id={titleId}
               className="mc-input"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
@@ -221,8 +315,11 @@ function NewTaskModal({
           </div>
 
           <div className="mc-form-row">
-            <label className="mc-form-label">Description</label>
+            <label className="mc-form-label" htmlFor={descriptionId}>
+              Description
+            </label>
             <textarea
+              id={descriptionId}
               className="mc-textarea"
               value={description}
               onChange={(e) => setDescription(e.target.value)}
@@ -232,8 +329,11 @@ function NewTaskModal({
           </div>
 
           <div className="mc-form-row">
-            <label className="mc-form-label">Tags</label>
+            <label className="mc-form-label" htmlFor={tagsId}>
+              Tags
+            </label>
             <input
+              id={tagsId}
               className="mc-input"
               value={tags}
               onChange={(e) => setTags(e.target.value)}
@@ -242,8 +342,11 @@ function NewTaskModal({
           </div>
 
           <div className="mc-form-row">
-            <label className="mc-form-label">Status</label>
+            <label className="mc-form-label" htmlFor={statusId}>
+              Status
+            </label>
             <select
+              id={statusId}
               className="mc-input"
               value={status}
               onChange={(e) => setStatus(e.target.value as TaskStatus | "")}
@@ -440,7 +543,11 @@ function TaskDetailDrawer({
                   );
                 })
               ) : (
-                <div className="mc-thread-placeholder">No messages yet. Add the first comment.</div>
+                <PanelState
+                  kind="empty"
+                  title="No messages yet"
+                  description="Add the first comment to start collaboration on this task."
+                />
               )}
             </div>
 
@@ -507,6 +614,7 @@ export function MissionControlPage({ workspace }: { workspace: Doc<"workspaces">
   });
   const review = useQuery(api.tasks.listByStatus, { workspaceId: workspace._id, status: "review" });
   const done = useQuery(api.tasks.listByStatus, { workspaceId: workspace._id, status: "done" });
+  const blocked = useQuery(api.tasks.listByStatus, { workspaceId: workspace._id, status: "blocked" });
   const liveFeed = useQuery(api.liveFeed.latest, { workspaceId: workspace._id });
   const undeliveredTotal = useQuery(api.notifications.totalUndelivered, {
     workspaceId: workspace._id,
@@ -516,6 +624,7 @@ export function MissionControlPage({ workspace }: { workspace: Doc<"workspaces">
 
   const [selectedTaskId, setSelectedTaskId] = useState<Id<"tasks"> | null>(null);
   const [newTaskOpen, setNewTaskOpen] = useState(false);
+  const [mobileTopbarOpen, setMobileTopbarOpen] = useState(false);
 
   const [dragOverColumn, setDragOverColumn] = useState<TaskStatus | null>(null);
   const [keyboardDrag, setKeyboardDrag] = useState<{
@@ -523,6 +632,15 @@ export function MissionControlPage({ workspace }: { workspace: Doc<"workspaces">
     columnIndex: number;
   } | null>(null);
   const [a11yAnnouncement, setA11yAnnouncement] = useState<string>("");
+  const [taskQuery, setTaskQuery] = useState("");
+  const [taskStatusFilter, setTaskStatusFilter] = useState<TaskStatusFilter>("all");
+  const [taskAssigneeFilter, setTaskAssigneeFilter] = useState<"all" | "unassigned" | Id<"agents">>(
+    "all"
+  );
+  const [feedQuery, setFeedQuery] = useState("");
+  const [feedTypeFilter, setFeedTypeFilter] = useState<LiveFeedFilter>("all");
+  const [feedWindowFilter, setFeedWindowFilter] = useState<LiveFeedWindowFilter>("all");
+  const [feedAgentFilter, setFeedAgentFilter] = useState<"all" | Id<"agents">>("all");
 
   const columns = useMemo(
     () =>
@@ -532,8 +650,9 @@ export function MissionControlPage({ workspace }: { workspace: Doc<"workspaces">
         { key: "in_progress", title: "In Progress", tasks: inProgress ?? [] },
         { key: "review", title: "Review", tasks: review ?? [] },
         { key: "done", title: "Done", tasks: done ?? [] },
+        { key: "blocked", title: "Blocked", tasks: blocked ?? [] },
       ] as const,
-    [inbox, assigned, inProgress, review, done]
+    [inbox, assigned, inProgress, review, done, blocked]
   );
 
   const selectedTask = useMemo(() => {
@@ -550,7 +669,131 @@ export function MissionControlPage({ workspace }: { workspace: Doc<"workspaces">
   }, [agents]);
 
   const activeAgents = useMemo(() => (agents ?? []).filter((a) => a.status === "active").length, [agents]);
-  const tasksInQueue = useMemo(() => columns.reduce((sum, c) => sum + c.tasks.length, 0), [columns]);
+  const totalTasks = useMemo(() => columns.reduce((sum, c) => sum + c.tasks.length, 0), [columns]);
+  const tasksLoading = useMemo(
+    () => [inbox, assigned, inProgress, review, done, blocked].some((bucket) => bucket === undefined),
+    [inbox, assigned, inProgress, review, done, blocked]
+  );
+  const agentsLoading = agents === undefined;
+  const liveFeedLoading = liveFeed === undefined;
+
+  const normalizedTaskQuery = taskQuery.trim().toLowerCase();
+  const hasTaskFilters =
+    normalizedTaskQuery.length > 0 || taskAssigneeFilter !== "all" || taskStatusFilter !== "all";
+
+  const filteredColumns = useMemo(
+    () =>
+      columns.map((col) => {
+        const visibleTasks = col.tasks.filter((task) => {
+          const taskAssigneeIds = task.assigneeIds ?? [];
+
+          if (taskStatusFilter !== "all" && task.status !== taskStatusFilter) return false;
+          if (taskAssigneeFilter === "unassigned" && taskAssigneeIds.length > 0) return false;
+          if (
+            taskAssigneeFilter !== "all" &&
+            taskAssigneeFilter !== "unassigned" &&
+            !taskAssigneeIds.includes(taskAssigneeFilter)
+          ) {
+            return false;
+          }
+
+          if (!normalizedTaskQuery) return true;
+
+          const assigneeNames = taskAssigneeIds.map((aid) => agentNameById.get(aid) ?? "");
+          const haystack = [
+            task.title,
+            task.description ?? "",
+            ...(task.tags ?? []),
+            ...assigneeNames,
+            col.title,
+          ]
+            .join(" ")
+            .toLowerCase();
+
+          return haystack.includes(normalizedTaskQuery);
+        });
+
+        return {
+          ...col,
+          totalCount: col.tasks.length,
+          visibleTasks,
+        };
+      }),
+    [columns, taskStatusFilter, taskAssigneeFilter, normalizedTaskQuery, agentNameById]
+  );
+
+  const boardColumns = useMemo(
+    () =>
+      filteredColumns.filter((col) => (taskStatusFilter === "all" ? true : col.key === taskStatusFilter)),
+    [filteredColumns, taskStatusFilter]
+  );
+
+  const visibleTaskCount = useMemo(
+    () => boardColumns.reduce((sum, col) => sum + col.visibleTasks.length, 0),
+    [boardColumns]
+  );
+  const columnsWithVisibleTasks = useMemo(
+    () => boardColumns.filter((col) => col.visibleTasks.length > 0).length,
+    [boardColumns]
+  );
+  const selectedTaskStatusLabel = useMemo(() => {
+    if (taskStatusFilter === "all") return "all columns";
+    return TASK_STATUS_META.find((item) => item.key === taskStatusFilter)?.title ?? "selected status";
+  }, [taskStatusFilter]);
+
+  const normalizedFeedQuery = feedQuery.trim().toLowerCase();
+  const hasFeedFilters =
+    feedTypeFilter !== "all" ||
+    feedWindowFilter !== "all" ||
+    feedAgentFilter !== "all" ||
+    normalizedFeedQuery.length > 0;
+
+  const filteredFeed = useMemo(
+    () => {
+      const nowMs = Date.now();
+      return (liveFeed ?? []).filter((entry) => {
+        if (!matchesLiveFeedWindow(entry.createdAt, feedWindowFilter, nowMs)) return false;
+        if (!matchesLiveFeedType(entry.type, feedTypeFilter)) return false;
+        if (feedAgentFilter !== "all" && entry.agentId !== feedAgentFilter) return false;
+        if (!normalizedFeedQuery) return true;
+
+        const actor = entry.agentId ? agentNameById.get(entry.agentId) ?? "agent" : "system";
+        const haystack = `${entry.message} ${entry.type} ${actor}`.toLowerCase();
+        return haystack.includes(normalizedFeedQuery);
+      });
+    },
+    [liveFeed, feedTypeFilter, feedWindowFilter, feedAgentFilter, normalizedFeedQuery, agentNameById]
+  );
+  const feedTotalCount = liveFeed?.length ?? 0;
+  const feedWindowLabel = useMemo(
+    () => LIVE_FEED_WINDOWS.find((window) => window.key === feedWindowFilter)?.label ?? "All Time",
+    [feedWindowFilter]
+  );
+
+  const taskFilterSummary = useMemo(() => {
+    if (tasksLoading) return "Syncing mission queue…";
+    if (!totalTasks) return "No tasks yet. Add a task to start dispatching work.";
+    if (!hasTaskFilters) return `Showing all ${visibleTaskCount} tasks across ${boardColumns.length} columns.`;
+    if (!visibleTaskCount) return `No tasks match filters (0 of ${totalTasks}).`;
+
+    return `Showing ${visibleTaskCount} of ${totalTasks} tasks across ${columnsWithVisibleTasks} column(s) in ${selectedTaskStatusLabel}.`;
+  }, [
+    tasksLoading,
+    totalTasks,
+    hasTaskFilters,
+    visibleTaskCount,
+    boardColumns.length,
+    columnsWithVisibleTasks,
+    selectedTaskStatusLabel,
+  ]);
+
+  const feedFilterSummary = useMemo(() => {
+    if (liveFeedLoading) return "Syncing activity stream…";
+    if (!feedTotalCount) return "No activity yet. Task and comment updates will appear here.";
+    if (!hasFeedFilters) return `${feedTotalCount} recent updates in the feed.`;
+    if (!filteredFeed.length) return `No updates match current filters (${feedWindowLabel} window).`;
+    return `${filteredFeed.length} of ${feedTotalCount} updates match current filters.`;
+  }, [liveFeedLoading, feedTotalCount, hasFeedFilters, filteredFeed.length, feedWindowLabel]);
 
   useEffect(() => {
     if (!a11yAnnouncement) return;
@@ -558,81 +801,137 @@ export function MissionControlPage({ workspace }: { workspace: Doc<"workspaces">
     return () => clearTimeout(t);
   }, [a11yAnnouncement]);
 
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const media = window.matchMedia("(min-width: 1080px)");
+    const handleChange = (event: MediaQueryListEvent | MediaQueryList) => {
+      if (event.matches) {
+        setMobileTopbarOpen(false);
+      }
+    };
+
+    handleChange(media);
+    const listener = (event: MediaQueryListEvent) => handleChange(event);
+    media.addEventListener("change", listener);
+    return () => media.removeEventListener("change", listener);
+  }, []);
+
+  useEffect(() => {
+    if (!mobileTopbarOpen) return;
+    const onEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setMobileTopbarOpen(false);
+      }
+    };
+
+    window.addEventListener("keydown", onEscape);
+    return () => window.removeEventListener("keydown", onEscape);
+  }, [mobileTopbarOpen]);
+
+  const now = new Date();
+
   return (
     <div className="mc-root">
       {/* Top bar */}
       <header className="mc-topbar">
-        <div className="flex items-center gap-3">
-          <div className="flex items-center gap-2">
+        <div className="mc-topbar-main">
+          <div className="mc-topbar-brand">
             <span className="mc-diamond" aria-hidden />
-            <div className="text-[11px] font-semibold tracking-[0.2em] text-zinc-800">
-              MISSION CONTROL
-            </div>
+            <div className="text-[12px] font-semibold tracking-[0.18em] text-zinc-800">Mission Control</div>
           </div>
-
-          <select
-            className="mc-input h-8 py-0 text-[12px]"
-            value={workspace.slug}
-            onChange={(e) => {
-              const slug = e.target.value;
-              window.localStorage.setItem("mc:lastWorkspaceSlug", slug);
-              router.push(`/w/${slug}`);
-            }}
-            aria-label="Workspace"
-          >
-            {(workspaces ?? []).map((w) => (
-              <option key={w._id} value={w.slug}>
-                {w.name}
-              </option>
-            ))}
-          </select>
-
-          <Link className="mc-chip bg-zinc-100" href={`/w/${workspace.slug}`}>
-            {workspace.slug}
-          </Link>
-        </div>
-
-        <div className="flex items-center gap-10">
-          <div className="text-center">
-            <div className="text-[18px] font-semibold text-zinc-900">{activeAgents}</div>
-            <div className="text-[9px] uppercase tracking-[0.22em] text-zinc-400">Agents Active</div>
-          </div>
-          <div className="text-center">
-            <div className="text-[18px] font-semibold text-zinc-900">{tasksInQueue}</div>
-            <div className="text-[9px] uppercase tracking-[0.22em] text-zinc-400">Tasks In Queue</div>
+          <div className="mc-topbar-main-actions">
+            <span className="mc-chip mc-topbar-summary bg-zinc-100">
+              Tasks {visibleTaskCount}/{totalTasks}
+            </span>
+            <button
+              className="mc-pill mc-topbar-toggle bg-zinc-100 text-zinc-700"
+              type="button"
+              onClick={() => setMobileTopbarOpen((open) => !open)}
+              aria-expanded={mobileTopbarOpen}
+              aria-controls="mc-topbar-content"
+              aria-label={mobileTopbarOpen ? "Collapse controls" : "Expand controls"}
+            >
+              {mobileTopbarOpen ? "Close" : "Menu"}
+            </button>
           </div>
         </div>
 
-        <div className="flex items-center gap-3">
-          <Link className="mc-pill bg-zinc-100 text-zinc-700" href={`/w/${workspace.slug}/agents`}>
-            Agents
-          </Link>
-          <Link className="mc-pill bg-zinc-100 text-zinc-700" href="/workspaces">
-            Workspaces
-          </Link>
+        <div id="mc-topbar-content" className={"mc-topbar-content " + (mobileTopbarOpen ? "open" : "")}>
+          <div className="mc-topbar-row mc-topbar-workspace">
+            <select
+              className="mc-input mc-topbar-select"
+              value={workspace.slug}
+              onChange={(e) => {
+                const slug = e.target.value;
+                window.localStorage.setItem("mc:lastWorkspaceSlug", slug);
+                setMobileTopbarOpen(false);
+                router.push(`/w/${slug}`);
+              }}
+              aria-label="Workspace"
+            >
+              {(workspaces ?? []).map((w) => (
+                <option key={w._id} value={w.slug}>
+                  {w.name}
+                </option>
+              ))}
+            </select>
+            <Link className="mc-chip bg-zinc-100" href={`/w/${workspace.slug}`}>
+              {workspace.slug}
+            </Link>
+          </div>
 
-          <div className="text-right">
-            <div className="text-[12px] font-semibold text-zinc-900">
-              {new Date().toLocaleTimeString()}
+          <div className="mc-topbar-row mc-topbar-metrics">
+            <div className="mc-stat">
+              <div className="mc-stat-value">{activeAgents}</div>
+              <div className="mc-stat-label">Agents Active</div>
             </div>
-            <div className="text-[9px] uppercase tracking-[0.22em] text-zinc-400">
-              {new Date().toLocaleDateString(undefined, {
-                weekday: "short",
-                month: "short",
-                day: "2-digit",
-              })}
+            <div className="mc-stat">
+              <div className="mc-stat-value">{totalTasks}</div>
+              <div className="mc-stat-label">Tasks Total</div>
+            </div>
+            <div className="mc-stat">
+              <div className="mc-stat-value">{visibleTaskCount}</div>
+              <div className="mc-stat-label">Tasks Visible</div>
             </div>
           </div>
 
-          <span className="mc-chip bg-zinc-100">Notifications {undeliveredTotal ?? 0}</span>
-          <div className="mc-online">Online</div>
+          <div className="mc-topbar-row mc-topbar-actions">
+            <Link
+              className="mc-pill bg-zinc-100 text-zinc-700"
+              href={`/w/${workspace.slug}/agents`}
+              onClick={() => setMobileTopbarOpen(false)}
+            >
+              Agents
+            </Link>
+            <Link
+              className="mc-pill bg-zinc-100 text-zinc-700"
+              href="/workspaces"
+              onClick={() => setMobileTopbarOpen(false)}
+            >
+              Workspaces
+            </Link>
+            <div className="text-right">
+              <div className="text-[13px] font-semibold text-zinc-900">
+                {now.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })}
+              </div>
+              <div className="text-[10px] uppercase tracking-[0.18em] text-zinc-500">
+                {now.toLocaleDateString(undefined, {
+                  weekday: "short",
+                  month: "short",
+                  day: "2-digit",
+                })}
+              </div>
+            </div>
+            <span className="mc-chip bg-zinc-100">Notifications {undeliveredTotal ?? 0}</span>
+            <div className="mc-online">Online</div>
+          </div>
         </div>
       </header>
 
       {/* Main grid */}
       <div className="mc-grid">
         {/* Agents */}
-        <aside className="mc-panel">
+        <aside className="mc-panel mc-panel-agents">
           <div className="mc-panel-header">
             <div className="flex items-center gap-2">
               <span className="mc-dot muted" aria-hidden />
@@ -640,27 +939,41 @@ export function MissionControlPage({ workspace }: { workspace: Doc<"workspaces">
             </div>
             <Chip>{agents?.length ?? 0}</Chip>
           </div>
-          <div className="mc-panel-body flex flex-col gap-2">
-            {(agents ?? []).slice(0, 9).map((a) => (
-              <AgentCard
-                key={a._id}
-                name={a.name}
-                role={a.role}
-                level={a.level}
-                status={a.status === "active" ? "WORKING" : a.status.toUpperCase()}
+          <div className="mc-panel-body flex flex-col gap-2" aria-busy={agentsLoading}>
+            {agentsLoading ? (
+              <PanelState
+                kind="loading"
+                title="Syncing agent roster"
+                description="Loading active agent presence and role details."
               />
-            ))}
+            ) : (agents ?? []).length ? (
+              (agents ?? []).slice(0, 9).map((a) => (
+                <AgentCard
+                  key={a._id}
+                  name={a.name}
+                  role={a.role}
+                  level={a.level}
+                  status={a.status === "active" ? "WORKING" : a.status.toUpperCase()}
+                />
+              ))
+            ) : (
+              <PanelState
+                kind="empty"
+                title="No agents yet"
+                description="Add agents from the Agents page to start assigning work."
+              />
+            )}
           </div>
         </aside>
 
         {/* Mission Queue */}
-        <section className="mc-panel mc-panel-wide">
-          <div className="mc-panel-header">
+        <section className="mc-panel mc-panel-wide mc-panel-queue">
+          <div className="mc-panel-header mc-panel-header-wrap">
             <div className="flex items-center gap-2">
               <span className="mc-dot amber" aria-hidden />
               <div className="mc-panel-title">Mission Queue</div>
             </div>
-            <div className="flex items-center gap-3">
+            <div className="flex flex-wrap items-center justify-end gap-2">
               <button
                 className="mc-pill bg-zinc-900 text-white"
                 type="button"
@@ -668,178 +981,413 @@ export function MissionControlPage({ workspace }: { workspace: Doc<"workspaces">
               >
                 + New Task
               </button>
-              <Chip>
-                <span className="mc-mini-avatar" aria-hidden /> 1
-              </Chip>
-              <Chip>{tasksInQueue} active</Chip>
+              <Chip>{visibleTaskCount} visible</Chip>
+              <Chip>{totalTasks} total</Chip>
             </div>
           </div>
 
-          <div className="mc-kanban">
+          <div className="mc-panel-body mc-toolbar" role="search" aria-label="Task filters">
+            <div className="mc-toolbar-grid">
+              <label className="mc-form-row">
+                <span className="mc-form-label">Search Tasks</span>
+                <div className="mc-input-wrap">
+                  <input
+                    className="mc-input"
+                    type="search"
+                    placeholder="Search title, description, tags, assignee"
+                    value={taskQuery}
+                    onChange={(e) => setTaskQuery(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Escape") {
+                        setTaskQuery("");
+                      }
+                    }}
+                    aria-label="Search tasks"
+                  />
+                  {taskQuery ? (
+                    <button
+                      className="mc-input-clear"
+                      type="button"
+                      onClick={() => setTaskQuery("")}
+                      aria-label="Clear task search"
+                    >
+                      Clear
+                    </button>
+                  ) : null}
+                </div>
+              </label>
+              <label className="mc-form-row">
+                <span className="mc-form-label">Assignee</span>
+                <select
+                  className="mc-input"
+                  value={taskAssigneeFilter}
+                  onChange={(e) => {
+                    const value = e.target.value;
+                    if (value === "all" || value === "unassigned") {
+                      setTaskAssigneeFilter(value);
+                      return;
+                    }
+                    setTaskAssigneeFilter(value as Id<"agents">);
+                  }}
+                >
+                  <option value="all">All assignees</option>
+                  <option value="unassigned">Unassigned</option>
+                  {(agents ?? []).map((agent) => (
+                    <option key={agent._id} value={agent._id}>
+                      {agent.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <div className="mc-toolbar-actions">
+                <span className="mc-toolbar-hint">Tip: press Esc in search to clear quickly.</span>
+              </div>
+            </div>
+            <div className="mc-toolbar-status" role="group" aria-label="Task status filters">
+              <Pill active={taskStatusFilter === "all"} onClick={() => setTaskStatusFilter("all")}>
+                All Statuses
+              </Pill>
+              {TASK_STATUS_META.map((status) => (
+                <Pill
+                  key={status.key}
+                  active={taskStatusFilter === status.key}
+                  onClick={() => setTaskStatusFilter(status.key)}
+                >
+                  {status.title}
+                </Pill>
+              ))}
+            </div>
+            <div className="mc-filter-feedback" aria-live="polite">
+              <div className="mc-filter-feedback-text">{taskFilterSummary}</div>
+              {hasTaskFilters ? (
+                <button
+                  className="mc-filter-inline"
+                  type="button"
+                  onClick={() => {
+                    setTaskQuery("");
+                    setTaskStatusFilter("all");
+                    setTaskAssigneeFilter("all");
+                  }}
+                >
+                  Reset
+                </button>
+              ) : null}
+            </div>
+          </div>
+
+          <div
+            className="mc-kanban"
+            tabIndex={0}
+            aria-label="Kanban columns. Use Left and Right Arrow keys to scroll."
+            aria-busy={tasksLoading}
+            onKeyDown={(e) => {
+              if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+              e.preventDefault();
+              const distance = e.key === "ArrowRight" ? 260 : -260;
+              e.currentTarget.scrollBy({ left: distance, behavior: "smooth" });
+            }}
+          >
             <div className="sr-only" aria-live="polite">
               {a11yAnnouncement}
             </div>
 
-            {columns.map((col, columnIndex) => (
-              <div
-                key={col.key}
-                className={
-                  "mc-column " +
-                  (dragOverColumn === col.key ? "outline outline-2 outline-zinc-900/10" : "")
-                }
-              >
-                <div className="mc-column-header">
-                  <div className="flex items-center gap-2">
-                    <span className="mc-dot muted" aria-hidden />
-                    <div className="text-[10px] font-semibold uppercase tracking-[0.22em] text-zinc-600">
-                      {col.title}
-                    </div>
-                  </div>
-                  <span className="mc-count">{col.tasks.length}</span>
-                </div>
-
-                <div
-                  className="mc-column-body"
-                  onDragOver={(e) => {
-                    e.preventDefault();
-                    setDragOverColumn(col.key);
-                  }}
-                  onDragLeave={() => {
-                    setDragOverColumn((cur) => (cur === col.key ? null : cur));
-                  }}
-                  onDrop={async (e) => {
-                    e.preventDefault();
-                    const id = e.dataTransfer.getData("text/plain");
-                    setDragOverColumn(null);
-                    if (!id) return;
-                    const taskId = id as Id<"tasks">;
-                    await updateStatus({
-                      workspaceId: workspace._id,
-                      id: taskId,
-                      status: col.key,
-                      fromHuman: true,
-                      actorName: "Human",
-                    });
-                    setA11yAnnouncement(`Moved task to ${col.title}.`);
-                  }}
-                >
-                  {col.tasks.map((t) => (
-                    <TaskCard
-                      key={t._id}
-                      id={t._id}
-                      title={t.title}
-                      description={t.description ?? ""}
-                      tags={t.tags ?? []}
-                      assignees={(t.assigneeIds ?? []).map((aid) => ({
-                        name: agentNameById.get(aid) ?? "Agent",
-                      }))}
-                      updatedAgo={new Date(t.updatedAt).toLocaleDateString()}
-                      draggable
-                      isKeyboardDragging={keyboardDrag?.taskId === t._id}
-                      onDragStart={() => {
-                        setKeyboardDrag(null);
-                        setA11yAnnouncement(`Dragging ${t.title}. Drop on a column to move.`);
-                      }}
-                      onKeyDown={async (e) => {
-                        if (e.key === "Escape") {
-                          if (keyboardDrag?.taskId === t._id) {
-                            e.preventDefault();
-                            setKeyboardDrag(null);
-                            setA11yAnnouncement("Cancelled move.");
-                          }
-                          return;
-                        }
-
-                        // Space picks up / drops. Enter drops.
-                        if (e.key === " " || e.key === "Enter") {
-                          e.preventDefault();
-                          if (!keyboardDrag || keyboardDrag.taskId !== t._id) {
-                            setKeyboardDrag({ taskId: t._id, columnIndex });
-                            setA11yAnnouncement(
-                              `Picked up ${t.title}. Use Left/Right arrows to choose a column, then press Enter to drop.`
-                            );
-                          } else {
-                            const dest = columns[keyboardDrag.columnIndex];
-                            await updateStatus({
-                              workspaceId: workspace._id,
-                              id: t._id,
-                              status: dest.key,
-                              fromHuman: true,
-                              actorName: "Human",
-                            });
-                            setKeyboardDrag(null);
-                            setA11yAnnouncement(`Moved ${t.title} to ${dest.title}.`);
-                          }
-                          return;
-                        }
-
-                        if (keyboardDrag?.taskId === t._id) {
-                          if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
-                            e.preventDefault();
-                            const delta = e.key === "ArrowLeft" ? -1 : 1;
-                            setKeyboardDrag((cur) => {
-                              if (!cur) return cur;
-                              const nextIndex = Math.max(
-                                0,
-                                Math.min(columns.length - 1, cur.columnIndex + delta)
-                              );
-                              const nextCol = columns[nextIndex];
-                              setA11yAnnouncement(`Target column: ${nextCol.title}.`);
-                              return { ...cur, columnIndex: nextIndex };
-                            });
-                          }
-                        }
-                      }}
-                      onClick={() => setSelectedTaskId(t._id)}
-                    />
-                  ))}
-                </div>
+            {tasksLoading ? (
+              <div className="mc-board-state">
+                <PanelState
+                  kind="loading"
+                  title="Loading mission queue"
+                  description="Tasks are syncing from all workflow columns."
+                />
               </div>
-            ))}
+            ) : (
+              boardColumns.map((col, columnIndex) => {
+                const isDragTarget = dragOverColumn === col.key;
+                const keyboardTargetKey =
+                  keyboardDrag ? TASK_STATUS_META[keyboardDrag.columnIndex]?.key : null;
+                const isKeyboardTarget = keyboardTargetKey === col.key;
+
+                return (
+                  <div
+                    key={col.key}
+                    className={
+                      "mc-column " +
+                      (isDragTarget ? "mc-column-drop-target " : "") +
+                      (isKeyboardTarget ? "mc-column-keyboard-target" : "")
+                    }
+                  >
+                  <div className="mc-column-header">
+                    <div className="flex items-center gap-2">
+                      <span className="mc-dot muted" aria-hidden />
+                      <div className="mc-column-title">{col.title}</div>
+                    </div>
+                    <span className="mc-count">
+                      {col.visibleTasks.length}
+                      {hasTaskFilters ? `/${col.totalCount}` : ""}
+                    </span>
+                  </div>
+
+                  <div
+                    className="mc-column-body"
+                    onDragOver={(e) => {
+                      e.preventDefault();
+                      setDragOverColumn(col.key);
+                    }}
+                    onDragLeave={() => {
+                      setDragOverColumn((cur) => (cur === col.key ? null : cur));
+                    }}
+                    onDrop={async (e) => {
+                      e.preventDefault();
+                      const id = e.dataTransfer.getData("text/plain");
+                      setDragOverColumn(null);
+                      if (!id) return;
+                      const taskId = id as Id<"tasks">;
+                      await updateStatus({
+                        workspaceId: workspace._id,
+                        id: taskId,
+                        status: col.key,
+                        fromHuman: true,
+                        actorName: "Human",
+                      });
+                      setA11yAnnouncement(`Moved task to ${col.title}.`);
+                    }}
+                    aria-label={`${col.title} column`}
+                  >
+                    {col.visibleTasks.length ? (
+                      col.visibleTasks.map((task) => (
+                        <TaskCard
+                          key={task._id}
+                          id={task._id}
+                          title={task.title}
+                          description={task.description ?? ""}
+                          tags={task.tags ?? []}
+                          assignees={(task.assigneeIds ?? []).map((aid) => ({
+                            name: agentNameById.get(aid) ?? "Agent",
+                          }))}
+                          updatedAgo={new Date(task.updatedAt).toLocaleDateString()}
+                          draggable
+                          isKeyboardDragging={keyboardDrag?.taskId === task._id}
+                          onDragStart={() => {
+                            setKeyboardDrag(null);
+                            setA11yAnnouncement(`Dragging ${task.title}. Drop on a column to move.`);
+                          }}
+                          onKeyDown={async (e) => {
+                            if (e.key === "Escape") {
+                              if (keyboardDrag?.taskId === task._id) {
+                                e.preventDefault();
+                                setKeyboardDrag(null);
+                                setA11yAnnouncement("Cancelled move.");
+                              }
+                              return;
+                            }
+
+                            // Space picks up / drops. Enter drops.
+                            if (e.key === " " || e.key === "Enter") {
+                              e.preventDefault();
+                              if (!keyboardDrag || keyboardDrag.taskId !== task._id) {
+                                setKeyboardDrag({ taskId: task._id, columnIndex });
+                                setA11yAnnouncement(
+                                  `Picked up ${task.title}. Use Left/Right arrows to choose a column, then press Enter to drop.`
+                                );
+                              } else {
+                                const dest = TASK_STATUS_META[keyboardDrag.columnIndex] ?? TASK_STATUS_META[0];
+                                await updateStatus({
+                                  workspaceId: workspace._id,
+                                  id: task._id,
+                                  status: dest.key,
+                                  fromHuman: true,
+                                  actorName: "Human",
+                                });
+                                setKeyboardDrag(null);
+                                setA11yAnnouncement(`Moved ${task.title} to ${dest.title}.`);
+                              }
+                              return;
+                            }
+
+                            if (keyboardDrag?.taskId === task._id) {
+                              if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
+                                e.preventDefault();
+                                const delta = e.key === "ArrowLeft" ? -1 : 1;
+                                setKeyboardDrag((cur) => {
+                                  if (!cur) return cur;
+                                  const nextIndex = Math.max(
+                                    0,
+                                    Math.min(TASK_STATUS_META.length - 1, cur.columnIndex + delta)
+                                  );
+                                  const nextCol = TASK_STATUS_META[nextIndex] ?? TASK_STATUS_META[0];
+                                  setA11yAnnouncement(`Target column: ${nextCol.title}.`);
+                                  return { ...cur, columnIndex: nextIndex };
+                                });
+                              }
+                            }
+                          }}
+                          onClick={() => setSelectedTaskId(task._id)}
+                        />
+                      ))
+                    ) : (
+                      <PanelState
+                        kind="empty"
+                        title={col.totalCount === 0 ? `No tasks in ${col.title}` : `No matches in ${col.title}`}
+                        description={
+                          col.totalCount === 0
+                            ? "Drag a task here or create a new task to populate this stage."
+                            : "Try broader keywords or reset filters to view more tasks."
+                        }
+                      />
+                    )}
+                  </div>
+                </div>
+                );
+              })
+            )}
           </div>
         </section>
 
         {/* Live Feed */}
-        <aside className="mc-panel">
+        <aside className="mc-panel mc-panel-feed">
           <div className="mc-panel-header">
             <div className="flex items-center gap-2">
               <span className="mc-dot green" aria-hidden />
               <div className="mc-panel-title">Live Feed</div>
             </div>
-            <div />
+            <Chip>
+              {filteredFeed.length}
+              {hasFeedFilters ? `/${feedTotalCount}` : ""}
+            </Chip>
           </div>
 
-          <div className="mc-panel-body">
-            <div className="mc-segment">
-              <Pill active>All</Pill>
-              <Pill>Tasks</Pill>
-              <Pill>Comments</Pill>
-              <Pill>Decisions</Pill>
-              <Pill>Docs</Pill>
-              <Pill>Status</Pill>
-            </div>
+          <div
+            className="mc-panel-body mc-feed-body"
+            role="search"
+            aria-label="Live feed filters"
+            aria-busy={liveFeedLoading}
+          >
+            <label className="mc-form-row">
+              <span className="mc-form-label">Search Feed</span>
+              <div className="mc-input-wrap">
+                <input
+                  className="mc-input"
+                  type="search"
+                  placeholder="Search message, actor, or type"
+                  value={feedQuery}
+                  onChange={(e) => setFeedQuery(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Escape") {
+                      setFeedQuery("");
+                    }
+                  }}
+                  aria-label="Search live feed"
+                />
+                {feedQuery ? (
+                  <button
+                    className="mc-input-clear"
+                    type="button"
+                    onClick={() => setFeedQuery("")}
+                    aria-label="Clear live feed search"
+                  >
+                    Clear
+                  </button>
+                ) : null}
+              </div>
+            </label>
 
-            <div className="mt-4 flex flex-wrap gap-2">
-              <span className="mc-filter active">All Agents</span>
-              {(agents ?? []).slice(0, 9).map((a) => (
-                <span key={a._id} className="mc-filter">
-                  {a.name}
-                </span>
+            <div className="mc-segment" role="group" aria-label="Feed time window filters">
+              {LIVE_FEED_WINDOWS.map((window) => (
+                <Pill
+                  key={window.key}
+                  active={feedWindowFilter === window.key}
+                  onClick={() => setFeedWindowFilter(window.key)}
+                >
+                  {window.label}
+                </Pill>
               ))}
             </div>
 
-            <div className="mt-4 flex flex-col gap-3">
-              {(liveFeed ?? []).map((e) => (
-                <div key={e._id} className="mc-feed-item">
-                  <div className="mc-feed-avatar" aria-hidden />
-                  <div className="min-w-0">
-                    <div className="text-[12px] text-zinc-800">{e.message}</div>
-                    <div className="mt-1 text-[10px] uppercase tracking-[0.22em] text-zinc-400">
-                      {new Date(e.createdAt).toLocaleString()}
+            <div className="mc-segment" role="group" aria-label="Feed category filters">
+              {LIVE_FEED_FILTERS.map((filter) => (
+                <Pill
+                  key={filter.key}
+                  active={feedTypeFilter === filter.key}
+                  onClick={() => setFeedTypeFilter(filter.key)}
+                >
+                  {filter.label}
+                </Pill>
+              ))}
+            </div>
+
+            <div className="mc-filter-row" role="group" aria-label="Feed agent filters">
+              <button
+                className={"mc-filter " + (feedAgentFilter === "all" ? "active" : "")}
+                type="button"
+                onClick={() => setFeedAgentFilter("all")}
+                aria-pressed={feedAgentFilter === "all"}
+              >
+                All Agents
+              </button>
+              {(agents ?? []).slice(0, 9).map((agent) => (
+                <button
+                  key={agent._id}
+                  className={"mc-filter " + (feedAgentFilter === agent._id ? "active" : "")}
+                  type="button"
+                  onClick={() => setFeedAgentFilter(agent._id)}
+                  aria-pressed={feedAgentFilter === agent._id}
+                >
+                  {agent.name}
+                </button>
+              ))}
+            </div>
+
+            <div className="mc-filter-feedback" aria-live="polite">
+              <div className="mc-filter-feedback-text">{feedFilterSummary}</div>
+              {hasFeedFilters ? (
+                <button
+                  className="mc-filter-inline"
+                  type="button"
+                  onClick={() => {
+                    setFeedQuery("");
+                    setFeedTypeFilter("all");
+                    setFeedWindowFilter("all");
+                    setFeedAgentFilter("all");
+                  }}
+                >
+                  Clear filters
+                </button>
+              ) : null}
+            </div>
+
+            <div className="mc-feed-list">
+              {liveFeedLoading ? (
+                <PanelState
+                  kind="loading"
+                  title="Loading live feed"
+                  description="Recent task and comment events are syncing."
+                />
+              ) : filteredFeed.length ? (
+                filteredFeed.map((entry) => (
+                  <div key={entry._id} className="mc-feed-item">
+                    <div className="mc-feed-avatar" aria-hidden />
+                    <div className="min-w-0">
+                      <div className="mc-feed-meta">
+                        {(entry.agentId ? agentNameById.get(entry.agentId) : null) ?? "System"} ·{" "}
+                        {formatLiveFeedType(entry.type)}
+                      </div>
+                      <div className="mc-feed-message">{entry.message}</div>
+                      <div className="mc-feed-time">
+                        {new Date(entry.createdAt).toLocaleString()}
+                      </div>
                     </div>
                   </div>
-                </div>
-              ))}
+                ))
+              ) : (
+                <PanelState
+                  kind="empty"
+                  title={hasFeedFilters ? "No matching activity" : "No activity yet"}
+                  description={
+                    hasFeedFilters
+                      ? "Adjust the feed filters or clear them to see more updates."
+                      : "Task, comment, and status updates will appear in real time."
+                  }
+                />
+              )}
             </div>
           </div>
         </aside>

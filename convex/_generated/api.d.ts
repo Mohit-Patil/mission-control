@@ -8,11 +8,14 @@
  * @module
  */
 
+import type * as activities from "../activities.js";
+import type * as admin from "../admin.js";
 import type * as agents from "../agents.js";
 import type * as liveFeed from "../liveFeed.js";
 import type * as messages from "../messages.js";
 import type * as migrations from "../migrations.js";
 import type * as notifications from "../notifications.js";
+import type * as runRequests from "../runRequests.js";
 import type * as seed from "../seed.js";
 import type * as standup from "../standup.js";
 import type * as tasks from "../tasks.js";
@@ -25,11 +28,14 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
+  activities: typeof activities;
+  admin: typeof admin;
   agents: typeof agents;
   liveFeed: typeof liveFeed;
   messages: typeof messages;
   migrations: typeof migrations;
   notifications: typeof notifications;
+  runRequests: typeof runRequests;
   seed: typeof seed;
   standup: typeof standup;
   tasks: typeof tasks;
