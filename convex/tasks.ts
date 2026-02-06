@@ -181,8 +181,14 @@ async function setAssigneesCore(
   if (!task) throw new Error("Task not found");
   if (task.workspaceId !== args.workspaceId) throw new Error("Wrong workspace");
 
+  let nextStatus = task.status;
+  if (task.status === "inbox" && args.assigneeIds.length > 0) {
+    nextStatus = "assigned";
+  }
+
   await ctx.db.patch(args.id, {
     assigneeIds: args.assigneeIds,
+    status: nextStatus,
     updatedAt: now,
   });
 
@@ -207,6 +213,16 @@ async function setAssigneesCore(
     message: `${actor} set assignees for “${task.title}” to ${who}`,
     createdAt: now,
   });
+
+  if (task.status === "inbox" && args.assigneeIds.length > 0) {
+    await ctx.db.insert("activities", {
+      workspaceId: args.workspaceId,
+      type: "task_status",
+      agentId: agent?._id,
+      message: `${actor} moved “${task.title}” to assigned`,
+      createdAt: now,
+    });
+  }
 }
 
 export const setAssignees = mutation({
