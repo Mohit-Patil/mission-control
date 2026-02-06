@@ -71,7 +71,7 @@ function parseArgs(argv) {
 
 function runCodex(prompt) {
   const cmd = process.env.CODEX_CMD || "codex";
-  const res = spawnSync(cmd, [], {
+  const res = spawnSync(cmd, ["exec", "-"], {
     input: prompt,
     encoding: "utf8",
     maxBuffer: 1024 * 1024 * 5,
