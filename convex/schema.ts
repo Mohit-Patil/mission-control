@@ -25,6 +25,9 @@ export default defineSchema({
     currentTaskId: v.optional(v.id("tasks")),
     sessionKey: v.optional(v.string()),
 
+    // Specialty tags for auto-routing (e.g. ["frontend", "ui", "react"])
+    tags: v.optional(v.array(v.string())),
+
     // Freeform prompt / notes for human operators.
     prompt: v.optional(v.string()),
     systemNotes: v.optional(v.string()),

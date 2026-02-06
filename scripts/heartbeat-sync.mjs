@@ -20,7 +20,8 @@ const __dirname = path.dirname(__filename);
 
 function readEnvLocal() {
   try {
-    const p = path.join(__dirname, "..", ".env.local");
+    let p = path.join(__dirname, "..", ".env.local");
+    if (!fs.existsSync(p)) p = path.join(__dirname, "..", ".env");
     const txt = fs.readFileSync(p, "utf8");
     const out = {};
     for (const line of txt.split(/\r?\n/)) {

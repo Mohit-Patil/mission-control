@@ -6,7 +6,8 @@
     "missionctl": "./scripts/missionctl.mjs"
   },
   "scripts": {
-    "dev": "next dev",
+    "dev": "concurrently --kill-others -n next,runq -c blue,yellow \"next dev\" \"node scripts/dev-runner.mjs\"",
+    "dev:next": "next dev",
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
@@ -24,6 +25,7 @@
     "@types/node": "^20.19.31",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "concurrently": "^9.2.1",
     "eslint": "^9",
     "eslint-config-next": "16.1.6",
     "tailwindcss": "^4",

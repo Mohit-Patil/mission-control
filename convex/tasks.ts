@@ -25,6 +25,18 @@ export const listByStatus = query({
   },
 });
 
+export const getById = query({
+  args: {
+    workspaceId: v.id("workspaces"),
+    id: v.id("tasks"),
+  },
+  handler: async (ctx, args) => {
+    const task = await ctx.db.get(args.id);
+    if (!task || task.workspaceId !== args.workspaceId) return null;
+    return task;
+  },
+});
+
 export const list = query({
   args: {
     workspaceId: v.id("workspaces"),
@@ -262,6 +274,64 @@ export const assign = mutation({
       fromHuman: args.fromHuman,
       actorName: args.actorName,
     });
+  },
+});
+
+const PRIORITY_ORDER: Record<string, number> = { high: 3, medium: 2, low: 1 };
+
+export const claimUnassigned = mutation({
+  args: {
+    workspaceId: v.id("workspaces"),
+    agentId: v.id("agents"),
+  },
+  handler: async (ctx, args) => {
+    const agent = await ctx.db.get(args.agentId);
+    if (!agent) throw new Error("Agent not found");
+    if (agent.workspaceId !== args.workspaceId) throw new Error("Wrong workspace");
+
+    const agentTags = agent.tags ?? [];
+    if (agentTags.length === 0) return null;
+
+    const inboxTasks = await ctx.db
+      .query("tasks")
+      .withIndex("by_workspace_status", (q) =>
+        q.eq("workspaceId", args.workspaceId).eq("status", "inbox")
+      )
+      .collect();
+
+    // Filter to tasks with overlapping tags
+    const matching = inboxTasks.filter((t) =>
+      (t.tags ?? []).some((tag) => agentTags.includes(tag))
+    );
+
+    if (matching.length === 0) return null;
+
+    // Sort by priority (high > medium > low > unset)
+    matching.sort(
+      (a, b) =>
+        (PRIORITY_ORDER[b.priority ?? ""] ?? 0) -
+        (PRIORITY_ORDER[a.priority ?? ""] ?? 0)
+    );
+
+    const task = matching[0];
+
+    // Assign agent + move to "assigned"
+    await setAssigneesCore(ctx, {
+      workspaceId: args.workspaceId,
+      id: task._id,
+      assigneeIds: [args.agentId],
+      fromAgentId: args.agentId,
+    });
+
+    await ctx.db.insert("activities", {
+      workspaceId: args.workspaceId,
+      type: "task_claimed",
+      agentId: args.agentId,
+      message: `${agent.name} auto-claimed "${task.title}" via tag match`,
+      createdAt: Date.now(),
+    });
+
+    return task._id;
   },
 });
 

@@ -16,6 +16,7 @@ type Draft = {
   role: string;
   level: AgentLevel;
   status: AgentStatus;
+  tags: string;
   sessionKey: string;
   prompt: string;
   systemNotes: string;
@@ -28,6 +29,7 @@ function toDraft(a?: Doc<"agents"> | null): Draft {
     role: a?.role ?? "",
     level: (a?.level as AgentLevel) ?? "SPC",
     status: (a?.status as AgentStatus) ?? "idle",
+    tags: (a?.tags ?? []).join(", "),
     sessionKey: a?.sessionKey ?? "",
     prompt: a?.prompt ?? "",
     systemNotes: a?.systemNotes ?? "",
@@ -58,7 +60,13 @@ export default function WorkspaceAgentsPage() {
     workspace ? { workspaceId: workspace._id } : "skip"
   );
 
-  const [selectedId, setSelectedId] = useState<Id<"agents"> | "new" | null>("new");
+  const [userSelectedId, setUserSelectedId] = useState<Id<"agents"> | "new" | null>(null);
+  const selectedId: Id<"agents"> | "new" = useMemo(() => {
+    if (userSelectedId !== null) return userSelectedId;
+    if (agents && agents.length > 0) return agents[0]._id;
+    return "new";
+  }, [userSelectedId, agents]);
+  const setSelectedId = setUserSelectedId;
   const upsert = useMutation(api.agents.upsert);
   const createRunRequest = useMutation(api.runRequests.create);
   const recentRuns = useQuery(
@@ -75,13 +83,13 @@ export default function WorkspaceAgentsPage() {
 
   const [draft, setDraft] = useState<Draft>(() => toDraft(null));
   const [error, setError] = useState<string | null>(null);
+  const [lastSyncedId, setLastSyncedId] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (!agents || agents.length === 0) return;
-    if (selectedId === "new") {
-      setSelectedId(agents[0]._id);
-    }
-  }, [agents, selectedId]);
+  // Sync draft when auto-selected agent changes (e.g. on first load)
+  if (selectedId !== "new" && selected && lastSyncedId !== selectedId) {
+    setDraft(toDraft(selected));
+    setLastSyncedId(selectedId);
+  }
 
   const selectNew = () => {
     setError(null);
@@ -117,7 +125,7 @@ export default function WorkspaceAgentsPage() {
   return (
     <div className="min-h-screen bg-zinc-50 p-6">
       <div className="mx-auto max-w-6xl">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <div className="text-[10px] font-bold uppercase tracking-[0.22em] text-zinc-500">
               Workspace
@@ -135,8 +143,8 @@ export default function WorkspaceAgentsPage() {
           </div>
         </div>
 
-        <div className="mt-6 grid grid-cols-12 gap-4">
-          <aside className="col-span-5 rounded-xl border border-zinc-200 bg-white p-4 shadow-sm">
+        <div className="mt-6 grid grid-cols-1 gap-4 lg:grid-cols-12">
+          <aside className="lg:col-span-5 rounded-xl border border-zinc-200 bg-white p-4 shadow-sm">
             <div className="flex items-center justify-between">
               <div className="text-[12px] font-semibold text-zinc-900">All agents</div>
               <button
@@ -169,6 +177,13 @@ export default function WorkspaceAgentsPage() {
                       <div className="truncate text-[10px] text-zinc-500">
                         {a.level} • {a.status} • {a.role}
                       </div>
+                      {(a.tags ?? []).length > 0 && (
+                        <div className="mt-0.5 flex flex-wrap gap-1">
+                          {(a.tags ?? []).map((t) => (
+                            <span key={t} className="mc-pill bg-violet-50 text-violet-600 text-[9px]">{t}</span>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   </button>
                 );
@@ -179,8 +194,8 @@ export default function WorkspaceAgentsPage() {
             </div>
           </aside>
 
-          <section className="col-span-7 rounded-xl border border-zinc-200 bg-white p-5 shadow-sm">
-            <div className="flex items-center justify-between">
+          <section className="lg:col-span-7 rounded-xl border border-zinc-200 bg-white p-5 shadow-sm">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div>
                 <div className="text-[10px] font-bold uppercase tracking-[0.22em] text-zinc-500">
                   {selectedId === "new" ? "New agent" : "Edit agent"}
@@ -189,7 +204,7 @@ export default function WorkspaceAgentsPage() {
                   {draft.name || "Untitled"}
                 </div>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <button
                   className="mc-pill bg-zinc-100 text-zinc-700"
                   type="button"
@@ -232,6 +247,10 @@ export default function WorkspaceAgentsPage() {
                       return;
                     }
                     try {
+                      const tagList = draft.tags
+                        .split(",")
+                        .map((t) => t.trim().toLowerCase())
+                        .filter(Boolean);
                       const id = await upsert({
                         workspaceId: workspace._id,
                         id: draft.id,
@@ -239,6 +258,7 @@ export default function WorkspaceAgentsPage() {
                         role,
                         level: draft.level,
                         status: draft.status,
+                        tags: tagList.length ? tagList : undefined,
                         sessionKey: draft.sessionKey.trim() ? draft.sessionKey.trim() : undefined,
                         prompt: draft.prompt.trim() ? draft.prompt : undefined,
                         systemNotes: draft.systemNotes.trim() ? draft.systemNotes : undefined,
@@ -282,7 +302,7 @@ export default function WorkspaceAgentsPage() {
               </div>
             ) : null}
 
-            <div className="mt-5 grid grid-cols-2 gap-3">
+            <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div className="mc-form-row">
                 <label className="mc-form-label">Name</label>
                 <input
@@ -327,7 +347,20 @@ export default function WorkspaceAgentsPage() {
                 </select>
               </div>
 
-              <div className="mc-form-row col-span-2">
+              <div className="mc-form-row sm:col-span-2">
+                <label className="mc-form-label">Tags</label>
+                <input
+                  className="mc-input"
+                  value={draft.tags}
+                  onChange={(e) => setDraft((d) => ({ ...d, tags: e.target.value }))}
+                  placeholder="e.g. frontend, ui, react (comma-separated)"
+                />
+                <div className="mt-1 text-[10px] text-zinc-400">
+                  Used for auto-routing: inbox tasks with matching tags get claimed by this agent
+                </div>
+              </div>
+
+              <div className="mc-form-row sm:col-span-2">
                 <label className="mc-form-label">Session key</label>
                 <input
                   className="mc-input"
@@ -337,7 +370,7 @@ export default function WorkspaceAgentsPage() {
                 />
               </div>
 
-              <div className="mc-form-row col-span-2">
+              <div className="mc-form-row sm:col-span-2">
                 <label className="mc-form-label">Prompt</label>
                 <textarea
                   className="mc-textarea"
@@ -348,7 +381,7 @@ export default function WorkspaceAgentsPage() {
                 />
               </div>
 
-              <div className="mc-form-row col-span-2">
+              <div className="mc-form-row sm:col-span-2">
                 <label className="mc-form-label">System notes</label>
                 <textarea
                   className="mc-textarea"

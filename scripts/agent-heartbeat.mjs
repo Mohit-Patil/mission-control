@@ -21,7 +21,8 @@ const __dirname = path.dirname(__filename);
 
 function readEnvLocal() {
   try {
-    const p = path.join(__dirname, "..", ".env.local");
+    let p = path.join(__dirname, "..", ".env.local");
+    if (!fs.existsSync(p)) p = path.join(__dirname, "..", ".env");
     const txt = fs.readFileSync(p, "utf8");
     const out = {};
     for (const line of txt.split(/\r?\n/)) {
@@ -69,16 +70,41 @@ function parseArgs(argv) {
   return out;
 }
 
-function runCodex(prompt) {
-  const cmd = process.env.CODEX_CMD || "codex";
-  const res = spawnSync(cmd, ["exec", "-"], {
-    input: prompt,
+function runAgent(prompt) {
+  const customCmd = process.env.HEARTBEAT_CMD;
+  if (customCmd) {
+    const res = spawnSync(customCmd, { input: prompt, encoding: "utf8", shell: true, maxBuffer: 1024 * 1024 * 10, timeout: 5 * 60 * 1000 });
+    if (res.error) throw res.error;
+    if (res.status !== 0) throw new Error(`Custom cmd exited ${res.status}: ${res.stderr || res.stdout}`);
+    return (res.stdout || "").trim();
+  }
+
+  // Use claude CLI with --print for non-interactive output
+  const projectRoot = path.join(__dirname, "..");
+  const res = spawnSync("claude", ["--print", "--dangerously-skip-permissions", "-p", prompt], {
+    cwd: projectRoot,
     encoding: "utf8",
-    maxBuffer: 1024 * 1024 * 5,
+    maxBuffer: 1024 * 1024 * 10,
+    timeout: 5 * 60 * 1000,
   });
-  if (res.error) throw res.error;
+
+  if (res.error) {
+    // Fallback: try npx claude if bare command fails
+    if (res.error.code === "ENOENT") {
+      const res2 = spawnSync("npx", ["claude", "--print", "--dangerously-skip-permissions", "-p", prompt], {
+        cwd: projectRoot,
+        encoding: "utf8",
+        maxBuffer: 1024 * 1024 * 10,
+        timeout: 5 * 60 * 1000,
+      });
+      if (res2.error) throw res2.error;
+      if (res2.status !== 0) throw new Error(`claude exited ${res2.status}: ${res2.stderr || res2.stdout}`);
+      return (res2.stdout || "").trim();
+    }
+    throw res.error;
+  }
   if (res.status !== 0) {
-    throw new Error(`codex exited with ${res.status}: ${res.stderr || res.stdout}`);
+    throw new Error(`claude exited ${res.status}: ${res.stderr || res.stdout}`);
   }
   return (res.stdout || "").trim();
 }
@@ -130,7 +156,11 @@ async function main() {
     message: msg,
   });
 
-  // Auto-progress loop with Codex CLI.
+  // Build a lookup for agent names (used in prompt context).
+  const allAgents = await client.query(api.agents.list, { workspaceId: ws._id });
+  const agentNameById = (id) => (allAgents ?? []).find((a) => a._id === id)?.name ?? "Agent";
+
+  // Auto-progress loop with Claude CLI.
   const now = Date.now();
   const task = tasks.find((t) => ["assigned", "in_progress", "review"].includes(t.status));
   if (task) {
@@ -151,21 +181,44 @@ async function main() {
       (task.status === "review" && minutes >= 5);
 
     if (shouldWork && (force || sinceAgentMsg >= 2)) {
+      const recentMessages = messages.slice(-5).map((m) => {
+        const who = m.fromHuman ? "Human" : (m.fromAgentId ? agentNameById(m.fromAgentId) : "System");
+        return `${who}: ${m.content}`;
+      }).join("\n");
+
       const prompt = [
-        `You are ${agentName}${agent?.role ? ` (${agent.role})` : ""}.`,
+        `You are ${agentName}${agent?.role ? ` (${agent.role})` : ""}, an AI agent working on a Mission Control task.`,
         `Workspace: ${ws.slug}.`,
-        `Task: ${task.title}`,
+        `Task: ${task.title} (status: ${task.status})`,
         task.description ? `Description: ${task.description}` : "",
-        "Respond with a concise progress update and next steps.",
+        recentMessages ? `\nRecent conversation:\n${recentMessages}` : "",
+        "",
+        "You are in the mission-control project directory. Do real coding work on this task:",
+        "1. Read relevant files to understand the codebase",
+        "2. Make concrete code changes to progress the task",
+        "3. Respond with a concise summary of what you did and what remains",
+        "",
+        "Focus on making real, useful changes. Do not just describe what you would do.",
+        "",
+        "IMPORTANT: At the very end of your response, you MUST include exactly one of these status lines",
+        "to indicate where this task should move to next:",
+        "",
+        "  STATUS: in_progress   — you started work but more remains",
+        "  STATUS: review        — you finished the work and it needs human review",
+        "  STATUS: done          — the task is fully complete, no further work needed",
+        "  STATUS: blocked       — you are stuck and need human help to proceed",
+        "",
+        "Choose the status that honestly reflects the state of the work. Do not default to in_progress",
+        "if the work is actually complete.",
       ]
         .filter(Boolean)
         .join("\n");
 
       let response = "";
       try {
-        response = runCodex(prompt);
+        response = runAgent(prompt);
       } catch (err) {
-        response = `Codex error: ${String(err?.message ?? err)}`;
+        response = `Agent error: ${String(err?.message ?? err)}`;
       }
 
       if (response) {
@@ -177,25 +230,31 @@ async function main() {
         });
       }
 
-      if (task.status === "assigned" && minutes >= 2) {
+      // Parse agent-declared status from response
+      const statusMatch = response.match(/\bSTATUS:\s*(in_progress|review|done|blocked)\b/i);
+      const declaredStatus = statusMatch ? statusMatch[1].toLowerCase() : null;
+
+      const VALID_TRANSITIONS = {
+        assigned: ["in_progress", "review", "done", "blocked"],
+        in_progress: ["review", "done", "blocked"],
+        review: ["done", "blocked"],
+      };
+
+      const allowed = VALID_TRANSITIONS[task.status] ?? [];
+
+      if (declaredStatus && allowed.includes(declaredStatus)) {
+        await client.mutation(api.tasks.updateStatus, {
+          workspaceId: ws._id,
+          id: task._id,
+          status: declaredStatus,
+          fromAgentId: agentId,
+        });
+      } else if (task.status === "assigned") {
+        // Fallback: at minimum move out of assigned when work was attempted
         await client.mutation(api.tasks.updateStatus, {
           workspaceId: ws._id,
           id: task._id,
           status: "in_progress",
-          fromAgentId: agentId,
-        });
-      } else if (task.status === "in_progress" && minutes >= 5) {
-        await client.mutation(api.tasks.updateStatus, {
-          workspaceId: ws._id,
-          id: task._id,
-          status: "review",
-          fromAgentId: agentId,
-        });
-      } else if (task.status === "review" && minutes >= 5) {
-        await client.mutation(api.tasks.updateStatus, {
-          workspaceId: ws._id,
-          id: task._id,
-          status: "done",
           fromAgentId: agentId,
         });
       }

@@ -3,6 +3,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
+import { execSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { ConvexHttpClient } from "convex/browser";
 import { api } from "../convex/_generated/api.js";
@@ -12,7 +13,8 @@ const __dirname = path.dirname(__filename);
 
 function readEnvLocal() {
   try {
-    const p = path.join(__dirname, "..", ".env.local");
+    let p = path.join(__dirname, "..", ".env.local");
+    if (!fs.existsSync(p)) p = path.join(__dirname, "..", ".env");
     const txt = fs.readFileSync(p, "utf8");
     const out = {};
     for (const line of txt.split(/\r?\n/)) {
@@ -47,7 +49,7 @@ function getConvexUrl() {
 }
 
 function usage() {
-  console.log(`missionctl - Mission Control CLI\n\nEnvironment:\n  CONVEX_URL (or NEXT_PUBLIC_CONVEX_URL)\n  WORKSPACE_SLUG (optional; can also pass --workspace)\n\nGlobal flags:\n  --workspace <slug>\n\nCommands:\n  agent status\n  agent upsert --name <name> --role <role> --level <LEAD|SPC|INT> --status <idle|active|blocked> [--id <agentId>] [--sessionKey <key>] [--prompt <text>] [--systemNotes <text>]\n\n  tasks list [--status <inbox|assigned|in_progress|review|done|blocked>] [--assignee <agentNameOrId>] [--limit <n>]\n  task updateStatus --id <taskId> --status <status>\n  task assign --id <taskId> --agent <agentNameOrId>\n  task unassign --id <taskId> --agent <agentNameOrId>\n\n  message post --task <taskId> --content <text> [--agent <agentNameOrId>]\n\n  notifications list --agent <agentNameOrId> [--all] [--limit <n>]\n  notifications markDelivered --id <notificationId>\n\n  standup [--hours <n>]\n`);
+  console.log(`missionctl - Mission Control CLI\n\nEnvironment:\n  CONVEX_URL (or NEXT_PUBLIC_CONVEX_URL)\n  WORKSPACE_SLUG (optional; can also pass --workspace)\n\nGlobal flags:\n  --workspace <slug>\n\nCommands:\n  agent status\n  agent upsert --name <name> --role <role> --level <LEAD|SPC|INT> --status <idle|active|blocked> [--id <agentId>] [--tags <comma-separated>] [--sessionKey <key>] [--prompt <text>] [--systemNotes <text>]\n  agent setup --name <name> --role <role> --level <LEAD|SPC|INT> --tags <comma-separated> [--worktree-dir <path>]\n\n  tasks list [--status <inbox|assigned|in_progress|review|done|blocked>] [--assignee <agentNameOrId>] [--limit <n>]\n  task get --id <taskId>\n  task messages --id <taskId>\n  task updateStatus --id <taskId> --status <status>\n  task assign --id <taskId> --agent <agentNameOrId>\n  task unassign --id <taskId> --agent <agentNameOrId>\n  task claim --agent <agentNameOrId>\n\n  message post --task <taskId> --content <text> [--agent <agentNameOrId>]\n\n  notifications list --agent <agentNameOrId> [--all] [--limit <n>]\n  notifications markDelivered --id <notificationId>\n\n  standup [--hours <n>]\n`);
 }
 
 function parseArgs(argv) {
@@ -137,6 +139,8 @@ async function main() {
         process.exit(2);
       }
 
+      const tags = args.tags ? String(args.tags).split(",").map((t) => t.trim()).filter(Boolean) : undefined;
+
       const existingId = id || (await getAgentIdByNameOrId(client, workspaceId, name));
       const agentId = await client.mutation(api.agents.upsert, {
         workspaceId,
@@ -145,11 +149,85 @@ async function main() {
         role,
         level,
         status,
+        tags,
         sessionKey: args.sessionKey || undefined,
         prompt: args.prompt || undefined,
         systemNotes: args.systemNotes || undefined,
       });
       console.log(agentId);
+      return;
+    }
+
+    if (cmd === "setup") {
+      const name = args.name;
+      const role = args.role || `${name} Agent`;
+      const level = args.level || "SPC";
+      const tagsRaw = args.tags;
+      if (!name || !tagsRaw) {
+        console.error("agent setup requires --name and --tags");
+        process.exit(2);
+      }
+      const tags = String(tagsRaw).split(",").map((t) => t.trim()).filter(Boolean);
+      const nameLower = name.toLowerCase().replace(/[^a-z0-9]+/g, "-");
+
+      // 1. Upsert agent in Convex
+      const existingId = await getAgentIdByNameOrId(client, workspaceId, name);
+      const agentId = await client.mutation(api.agents.upsert, {
+        workspaceId,
+        id: existingId || undefined,
+        name,
+        role,
+        level,
+        status: "active",
+        tags,
+      });
+      console.log(`Agent created: ${agentId} (${name}, tags: ${tags.join(", ")})`);
+
+      // 2. Create git worktree
+      const projectRoot = path.join(__dirname, "..");
+      const worktreeParent = args["worktree-dir"]
+        ? path.resolve(args["worktree-dir"])
+        : path.resolve(projectRoot, "..", "mc-agents");
+      const worktreePath = path.join(worktreeParent, nameLower);
+      const branchName = `agent/${nameLower}`;
+
+      if (!fs.existsSync(worktreeParent)) {
+        fs.mkdirSync(worktreeParent, { recursive: true });
+      }
+
+      if (fs.existsSync(worktreePath)) {
+        console.log(`Worktree already exists: ${worktreePath}`);
+      } else {
+        try {
+          execSync(`git worktree add "${worktreePath}" -b "${branchName}"`, {
+            cwd: projectRoot,
+            stdio: "inherit",
+          });
+        } catch {
+          // Branch may already exist — try without -b
+          execSync(`git worktree add "${worktreePath}" "${branchName}"`, {
+            cwd: projectRoot,
+            stdio: "inherit",
+          });
+        }
+        console.log(`Worktree created: ${worktreePath}`);
+      }
+
+      // 3. Write .mc-agent.json in worktree
+      const slug = args.workspace || process.env.WORKSPACE_SLUG;
+      const mcConfig = { workspace: slug, agentName: name };
+      fs.writeFileSync(
+        path.join(worktreePath, ".mc-agent.json"),
+        JSON.stringify(mcConfig, null, 2) + "\n"
+      );
+      console.log(`Wrote .mc-agent.json in ${worktreePath}`);
+
+      console.log(`\nAgent "${name}" is ready!`);
+      console.log(`  Worktree: ${worktreePath}`);
+      console.log(`  Branch:   ${branchName}`);
+      console.log(`\nTo start working:`);
+      console.log(`  cd ${worktreePath}`);
+      console.log(`  # Open a new Claude Code session and run /heartbeat`);
       return;
     }
   }
@@ -174,6 +252,43 @@ async function main() {
   }
 
   if (group === "task") {
+    if (cmd === "get") {
+      const id = args.id;
+      if (!id) {
+        usage();
+        process.exit(2);
+      }
+      const task = await client.query(api.tasks.getById, { workspaceId, id });
+      if (!task) {
+        console.error(`Task not found: ${id}`);
+        process.exit(2);
+      }
+      // Resolve assignee names
+      const agents = await client.query(api.agents.list, { workspaceId });
+      const agentMap = Object.fromEntries(agents.map((a) => [a._id, a.name]));
+      const assigneeNames = (task.assigneeIds ?? []).map((aid) => agentMap[aid] || aid);
+      console.log(JSON.stringify({ ...task, assigneeNames }, null, 2));
+      return;
+    }
+
+    if (cmd === "messages") {
+      const id = args.id;
+      if (!id) {
+        usage();
+        process.exit(2);
+      }
+      const messages = await client.query(api.messages.listByTask, { workspaceId, taskId: id });
+      // Resolve agent names
+      const agents = await client.query(api.agents.list, { workspaceId });
+      const agentMap = Object.fromEntries(agents.map((a) => [a._id, a.name]));
+      const enriched = messages.map((m) => ({
+        ...m,
+        fromAgentName: m.fromAgentId ? agentMap[m.fromAgentId] || m.fromAgentId : null,
+      }));
+      console.log(JSON.stringify(enriched, null, 2));
+      return;
+    }
+
     if (cmd === "updateStatus") {
       const id = args.id;
       const status = args.status;
@@ -189,6 +304,30 @@ async function main() {
         actorName: "missionctl",
       });
       console.log("OK");
+      return;
+    }
+
+    if (cmd === "claim") {
+      const agent = args.agent;
+      if (!agent) {
+        console.error("task claim requires --agent <agentNameOrId>");
+        process.exit(2);
+      }
+      const agentId = await getAgentIdByNameOrId(client, workspaceId, agent);
+      if (!agentId) {
+        console.error(`Unknown agent: ${agent}`);
+        process.exit(2);
+      }
+      const taskId = await client.mutation(api.tasks.claimUnassigned, {
+        workspaceId,
+        agentId,
+      });
+      if (taskId) {
+        const task = await client.query(api.tasks.getById, { workspaceId, id: taskId });
+        console.log(`Claimed: ${taskId}\t${task?.title ?? "(unknown)"}`);
+      } else {
+        console.log("No matching tasks.");
+      }
       return;
     }
 
@@ -301,7 +440,9 @@ async function main() {
   process.exit(1);
 }
 
-main().catch((err) => {
-  console.error(err?.stack || String(err));
-  process.exit(1);
-});
+main()
+  .then(() => process.exit(0))
+  .catch((err) => {
+    console.error(err?.stack || String(err));
+    process.exit(1);
+  });

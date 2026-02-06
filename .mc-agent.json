@@ -1,0 +1,6 @@
+{
+  "workspace": "mission-control",
+  "agentName": "MORTYYYY",
+  "runQueueEnabled": true,
+  "runQueueInterval": 30000
+}

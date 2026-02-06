@@ -1,8 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "../../../convex/_generated/api";
 import type { Doc, Id } from "../../../convex/_generated/dataModel";
@@ -74,24 +74,79 @@ function Chip({ children }: { children: React.ReactNode }) {
   );
 }
 
+function SkeletonCard() {
+  return (
+    <div className="mc-skeleton-card">
+      <div className="mc-skeleton-line mc-skeleton-line-lg" style={{ width: "70%" }} />
+      <div className="mc-skeleton-line mt-2" style={{ width: "100%" }} />
+      <div className="mc-skeleton-line mt-1" style={{ width: "85%" }} />
+      <div className="flex items-center gap-2 mt-3">
+        <div className="mc-skeleton-avatar" style={{ width: 14, height: 14, borderRadius: 5 }} />
+        <div className="mc-skeleton-line" style={{ width: 60 }} />
+        <div className="ml-auto mc-skeleton-line" style={{ width: 50 }} />
+      </div>
+    </div>
+  );
+}
+
+function SkeletonAgentCard() {
+  return (
+    <div className="mc-agent" style={{ opacity: 0.7 }}>
+      <div className="mc-skeleton-avatar" />
+      <div className="min-w-0 flex-1">
+        <div className="mc-skeleton-line mc-skeleton-line-lg" style={{ width: "60%" }} />
+        <div className="mc-skeleton-line mc-skeleton-line-sm mt-1.5" style={{ width: "80%" }} />
+      </div>
+    </div>
+  );
+}
+
+function SkeletonFeedItem() {
+  return (
+    <div className="mc-feed-item" style={{ opacity: 0.7 }}>
+      <div className="mc-skeleton-avatar mc-skeleton-avatar-sm" />
+      <div className="min-w-0 flex-1">
+        <div className="mc-skeleton-line mc-skeleton-line-sm" style={{ width: "40%" }} />
+        <div className="mc-skeleton-line mt-2" style={{ width: "90%" }} />
+        <div className="mc-skeleton-line mc-skeleton-line-sm mt-2" style={{ width: "30%" }} />
+      </div>
+    </div>
+  );
+}
+
+const EMPTY_STATE_ICONS: Record<string, string> = {
+  task: "\u{1F4CB}",
+  filter: "\u{1F50D}",
+  feed: "\u{1F4E1}",
+  agent: "\u{1F916}",
+  message: "\u{1F4AC}",
+};
+
 function PanelState({
   kind,
   title,
   description,
+  icon,
 }: {
   kind: "loading" | "empty";
   title: string;
   description: string;
+  icon?: string;
 }) {
+  const emoji = kind === "empty" && icon ? EMPTY_STATE_ICONS[icon] : null;
   return (
     <div className={kind === "loading" ? "mc-loading" : "mc-empty"} role="status" aria-live="polite">
       <div className="mc-state-head">
-        <span
-          className={
-            "mc-state-indicator " + (kind === "loading" ? "mc-state-indicator-loading" : "mc-state-indicator-empty")
-          }
-          aria-hidden
-        />
+        {emoji ? (
+          <span className="text-[18px]" aria-hidden>{emoji}</span>
+        ) : (
+          <span
+            className={
+              "mc-state-indicator " + (kind === "loading" ? "mc-state-indicator-loading" : "mc-state-indicator-empty")
+            }
+            aria-hidden
+          />
+        )}
         <div>
           <div className="mc-state-kicker">{kind === "loading" ? "Loading" : "Empty State"}</div>
           <div className="mc-state-title">{title}</div>
@@ -133,28 +188,56 @@ function AgentCard({
   role,
   level,
   status,
+  rawStatus,
 }: {
   name: string;
   role: string;
   level: string;
   status: string;
+  rawStatus: string;
 }) {
+  const dotClass =
+    rawStatus === "active"
+      ? "mc-dot mc-dot-active"
+      : rawStatus === "blocked"
+        ? "mc-dot mc-dot-blocked"
+        : "mc-dot mc-dot-idle";
+  const statusColor =
+    rawStatus === "active"
+      ? "text-emerald-700"
+      : rawStatus === "blocked"
+        ? "text-red-600"
+        : "text-zinc-500";
+
   return (
     <div className="mc-agent">
       <div className="mc-avatar" aria-hidden />
-      <div className="min-w-0">
+      <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
-          <div className="truncate text-[13px] font-medium text-zinc-900">{name}</div>
-          <span className="mc-badge">{level}</span>
+          <div className="text-[13px] font-semibold text-zinc-900">{name}</div>
+          <span className="mc-badge shrink-0">{level}</span>
         </div>
-        <div className="truncate text-[11px] text-zinc-500">{role}</div>
-      </div>
-      <div className="ml-auto flex items-center gap-2">
-        <span className="mc-dot" aria-hidden />
-        <span className="text-[11px] font-medium text-emerald-700">{status}</span>
+        <div className="flex items-center gap-2 mt-0.5">
+          <div className="truncate text-[11px] text-zinc-500">{role}</div>
+          <span className="ml-auto flex shrink-0 items-center gap-1.5">
+            <span className={dotClass} aria-hidden />
+            <span className={`text-[10px] font-semibold uppercase tracking-wide ${statusColor}`}>{status}</span>
+          </span>
+        </div>
       </div>
     </div>
   );
+}
+
+function PriorityBadge({ priority }: { priority?: string }) {
+  if (!priority || priority === "none") return null;
+  const cls =
+    priority === "high"
+      ? "mc-priority mc-priority-high"
+      : priority === "medium"
+        ? "mc-priority mc-priority-medium"
+        : "mc-priority mc-priority-low";
+  return <span className={cls}>{priority}</span>;
 }
 
 function TaskCard({
@@ -162,6 +245,7 @@ function TaskCard({
   title,
   description,
   tags,
+  priority,
   assignees,
   updatedAgo,
   onClick,
@@ -174,6 +258,7 @@ function TaskCard({
   title: string;
   description: string;
   tags: string[];
+  priority?: string;
   assignees?: { name: string }[];
   updatedAgo: string;
   onClick?: () => void;
@@ -203,8 +288,11 @@ function TaskCard({
       }
       aria-label={`Task ${title}`}
     >
-      <div className="text-[14px] font-semibold leading-5 text-zinc-900">{title}</div>
-      <div className="mt-1 line-clamp-3 text-[12px] leading-5 text-zinc-600">{description}</div>
+      <div className="flex items-start justify-between gap-2">
+        <div className="text-[14px] font-semibold leading-snug text-zinc-900">{title}</div>
+        <PriorityBadge priority={priority} />
+      </div>
+      <div className="mt-1 line-clamp-3 text-[12.5px] leading-5 text-zinc-600">{description}</div>
 
       {assignees?.length ? (
         <div className="mt-3 flex items-center gap-2">
@@ -547,6 +635,7 @@ function TaskDetailDrawer({
                   kind="empty"
                   title="No messages yet"
                   description="Add the first comment to start collaboration on this task."
+                  icon="message"
                 />
               )}
             </div>
@@ -603,6 +692,7 @@ function TaskDetailDrawer({
 
 export function MissionControlPage({ workspace }: { workspace: Doc<"workspaces"> }) {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const workspaces = useQuery(api.workspaces.list);
 
   const agents = useQuery(api.agents.list, { workspaceId: workspace._id });
@@ -632,15 +722,30 @@ export function MissionControlPage({ workspace }: { workspace: Doc<"workspaces">
     columnIndex: number;
   } | null>(null);
   const [a11yAnnouncement, setA11yAnnouncement] = useState<string>("");
-  const [taskQuery, setTaskQuery] = useState("");
-  const [taskStatusFilter, setTaskStatusFilter] = useState<TaskStatusFilter>("all");
-  const [taskAssigneeFilter, setTaskAssigneeFilter] = useState<"all" | "unassigned" | Id<"agents">>(
-    "all"
+  const [taskQuery, setTaskQuery] = useState(() => searchParams.get("q") ?? "");
+  const [taskStatusFilter, setTaskStatusFilter] = useState<TaskStatusFilter>(
+    () => (searchParams.get("status") as TaskStatusFilter) || "all"
   );
-  const [feedQuery, setFeedQuery] = useState("");
-  const [feedTypeFilter, setFeedTypeFilter] = useState<LiveFeedFilter>("all");
-  const [feedWindowFilter, setFeedWindowFilter] = useState<LiveFeedWindowFilter>("all");
-  const [feedAgentFilter, setFeedAgentFilter] = useState<"all" | Id<"agents">>("all");
+  const [taskAssigneeFilter, setTaskAssigneeFilter] = useState<"all" | "unassigned" | Id<"agents">>(
+    () => (searchParams.get("assignee") as "all" | "unassigned" | Id<"agents">) || "all"
+  );
+  const [taskTagFilter, setTaskTagFilter] = useState<string>(
+    () => searchParams.get("tag") ?? "all"
+  );
+  const [taskPriorityFilter, setTaskPriorityFilter] = useState<string>(
+    () => searchParams.get("priority") ?? "all"
+  );
+  const [feedQuery, setFeedQuery] = useState(() => searchParams.get("fq") ?? "");
+  const [feedTypeFilter, setFeedTypeFilter] = useState<LiveFeedFilter>(
+    () => (searchParams.get("ft") as LiveFeedFilter) || "all"
+  );
+  const [feedWindowFilter, setFeedWindowFilter] = useState<LiveFeedWindowFilter>(
+    () => (searchParams.get("fw") as LiveFeedWindowFilter) || "all"
+  );
+  const [feedAgentFilter, setFeedAgentFilter] = useState<"all" | Id<"agents">>(
+    () => (searchParams.get("fa") as "all" | Id<"agents">) || "all"
+  );
+  const [nowMs, setNowMs] = useState(() => Date.now());
 
   const columns = useMemo(
     () =>
@@ -668,6 +773,18 @@ export function MissionControlPage({ workspace }: { workspace: Doc<"workspaces">
     return new Map((agents ?? []).map((a) => [a._id, a.name] as const));
   }, [agents]);
 
+  const allTags = useMemo(() => {
+    const tagSet = new Set<string>();
+    for (const col of columns) {
+      for (const task of col.tasks) {
+        for (const tag of task.tags ?? []) {
+          tagSet.add(tag);
+        }
+      }
+    }
+    return Array.from(tagSet).sort();
+  }, [columns]);
+
   const activeAgents = useMemo(() => (agents ?? []).filter((a) => a.status === "active").length, [agents]);
   const totalTasks = useMemo(() => columns.reduce((sum, c) => sum + c.tasks.length, 0), [columns]);
   const tasksLoading = useMemo(
@@ -679,7 +796,11 @@ export function MissionControlPage({ workspace }: { workspace: Doc<"workspaces">
 
   const normalizedTaskQuery = taskQuery.trim().toLowerCase();
   const hasTaskFilters =
-    normalizedTaskQuery.length > 0 || taskAssigneeFilter !== "all" || taskStatusFilter !== "all";
+    normalizedTaskQuery.length > 0 ||
+    taskAssigneeFilter !== "all" ||
+    taskStatusFilter !== "all" ||
+    taskTagFilter !== "all" ||
+    taskPriorityFilter !== "all";
 
   const filteredColumns = useMemo(
     () =>
@@ -695,6 +816,20 @@ export function MissionControlPage({ workspace }: { workspace: Doc<"workspaces">
             !taskAssigneeIds.includes(taskAssigneeFilter)
           ) {
             return false;
+          }
+
+          if (taskTagFilter !== "all") {
+            const taskTags = task.tags ?? [];
+            if (!taskTags.includes(taskTagFilter)) return false;
+          }
+
+          if (taskPriorityFilter !== "all") {
+            const taskPriority = (task as Record<string, unknown>).priority as string | undefined;
+            if (taskPriorityFilter === "none") {
+              if (taskPriority && taskPriority !== "none") return false;
+            } else {
+              if (taskPriority !== taskPriorityFilter) return false;
+            }
           }
 
           if (!normalizedTaskQuery) return true;
@@ -719,7 +854,7 @@ export function MissionControlPage({ workspace }: { workspace: Doc<"workspaces">
           visibleTasks,
         };
       }),
-    [columns, taskStatusFilter, taskAssigneeFilter, normalizedTaskQuery, agentNameById]
+    [columns, taskStatusFilter, taskAssigneeFilter, taskTagFilter, taskPriorityFilter, normalizedTaskQuery, agentNameById]
   );
 
   const boardColumns = useMemo(
@@ -749,9 +884,8 @@ export function MissionControlPage({ workspace }: { workspace: Doc<"workspaces">
     normalizedFeedQuery.length > 0;
 
   const filteredFeed = useMemo(
-    () => {
-      const nowMs = Date.now();
-      return (liveFeed ?? []).filter((entry) => {
+    () =>
+      (liveFeed ?? []).filter((entry) => {
         if (!matchesLiveFeedWindow(entry.createdAt, feedWindowFilter, nowMs)) return false;
         if (!matchesLiveFeedType(entry.type, feedTypeFilter)) return false;
         if (feedAgentFilter !== "all" && entry.agentId !== feedAgentFilter) return false;
@@ -760,9 +894,8 @@ export function MissionControlPage({ workspace }: { workspace: Doc<"workspaces">
         const actor = entry.agentId ? agentNameById.get(entry.agentId) ?? "agent" : "system";
         const haystack = `${entry.message} ${entry.type} ${actor}`.toLowerCase();
         return haystack.includes(normalizedFeedQuery);
-      });
-    },
-    [liveFeed, feedTypeFilter, feedWindowFilter, feedAgentFilter, normalizedFeedQuery, agentNameById]
+      }),
+    [liveFeed, feedTypeFilter, feedWindowFilter, feedAgentFilter, normalizedFeedQuery, agentNameById, nowMs]
   );
   const feedTotalCount = liveFeed?.length ?? 0;
   const feedWindowLabel = useMemo(
@@ -794,6 +927,11 @@ export function MissionControlPage({ workspace }: { workspace: Doc<"workspaces">
     if (!filteredFeed.length) return `No updates match current filters (${feedWindowLabel} window).`;
     return `${filteredFeed.length} of ${feedTotalCount} updates match current filters.`;
   }, [liveFeedLoading, feedTotalCount, hasFeedFilters, filteredFeed.length, feedWindowLabel]);
+
+  useEffect(() => {
+    const interval = setInterval(() => setNowMs(Date.now()), 60_000);
+    return () => clearInterval(interval);
+  }, []);
 
   useEffect(() => {
     if (!a11yAnnouncement) return;
@@ -828,10 +966,63 @@ export function MissionControlPage({ workspace }: { workspace: Doc<"workspaces">
     return () => window.removeEventListener("keydown", onEscape);
   }, [mobileTopbarOpen]);
 
+  // Sync filters to URL search params (debounced for text inputs)
+  const syncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const syncFiltersToUrl = useCallback(() => {
+    const params = new URLSearchParams();
+    if (taskQuery) params.set("q", taskQuery);
+    if (taskStatusFilter !== "all") params.set("status", taskStatusFilter);
+    if (taskAssigneeFilter !== "all") params.set("assignee", taskAssigneeFilter);
+    if (taskTagFilter !== "all") params.set("tag", taskTagFilter);
+    if (taskPriorityFilter !== "all") params.set("priority", taskPriorityFilter);
+    if (feedQuery) params.set("fq", feedQuery);
+    if (feedTypeFilter !== "all") params.set("ft", feedTypeFilter);
+    if (feedWindowFilter !== "all") params.set("fw", feedWindowFilter);
+    if (feedAgentFilter !== "all") params.set("fa", feedAgentFilter);
+
+    const qs = params.toString();
+    const target = qs ? `?${qs}` : window.location.pathname;
+    window.history.replaceState(null, "", target);
+  }, [
+    taskQuery, taskStatusFilter, taskAssigneeFilter, taskTagFilter, taskPriorityFilter,
+    feedQuery, feedTypeFilter, feedWindowFilter, feedAgentFilter,
+  ]);
+
+  useEffect(() => {
+    if (syncTimerRef.current) clearTimeout(syncTimerRef.current);
+    syncTimerRef.current = setTimeout(syncFiltersToUrl, 300);
+    return () => {
+      if (syncTimerRef.current) clearTimeout(syncTimerRef.current);
+    };
+  }, [syncFiltersToUrl]);
+
+  const activeTaskFilterCount = useMemo(() => {
+    let count = 0;
+    if (normalizedTaskQuery.length > 0) count++;
+    if (taskStatusFilter !== "all") count++;
+    if (taskAssigneeFilter !== "all") count++;
+    if (taskTagFilter !== "all") count++;
+    if (taskPriorityFilter !== "all") count++;
+    return count;
+  }, [normalizedTaskQuery, taskStatusFilter, taskAssigneeFilter, taskTagFilter, taskPriorityFilter]);
+
+  const activeFeedFilterCount = useMemo(() => {
+    let count = 0;
+    if (normalizedFeedQuery.length > 0) count++;
+    if (feedTypeFilter !== "all") count++;
+    if (feedWindowFilter !== "all") count++;
+    if (feedAgentFilter !== "all") count++;
+    return count;
+  }, [normalizedFeedQuery, feedTypeFilter, feedWindowFilter, feedAgentFilter]);
+
   const now = new Date();
 
   return (
     <div className="mc-root">
+      <a className="mc-skip-nav" href="#mc-mission-queue">
+        Skip to Mission Queue
+      </a>
+
       {/* Top bar */}
       <header className="mc-topbar">
         <div className="mc-topbar-main">
@@ -875,54 +1066,57 @@ export function MissionControlPage({ workspace }: { workspace: Doc<"workspaces">
                 </option>
               ))}
             </select>
-            <Link className="mc-chip bg-zinc-100" href={`/w/${workspace.slug}`}>
-              {workspace.slug}
-            </Link>
           </div>
 
           <div className="mc-topbar-row mc-topbar-metrics">
-            <div className="mc-stat">
-              <div className="mc-stat-value">{activeAgents}</div>
-              <div className="mc-stat-label">Agents Active</div>
+            <div className="mc-stat-inline">
+              <span className="mc-stat-inline-value">{activeAgents}</span>
+              <span className="mc-stat-inline-label">agents</span>
             </div>
-            <div className="mc-stat">
-              <div className="mc-stat-value">{totalTasks}</div>
-              <div className="mc-stat-label">Tasks Total</div>
+            <span className="mc-topbar-sep" aria-hidden />
+            <div className="mc-stat-inline">
+              <span className="mc-stat-inline-value">{totalTasks}</span>
+              <span className="mc-stat-inline-label">tasks</span>
             </div>
-            <div className="mc-stat">
-              <div className="mc-stat-value">{visibleTaskCount}</div>
-              <div className="mc-stat-label">Tasks Visible</div>
+            <span className="mc-topbar-sep" aria-hidden />
+            <div className="mc-stat-inline">
+              <span className="mc-stat-inline-value">{visibleTaskCount}</span>
+              <span className="mc-stat-inline-label">visible</span>
             </div>
           </div>
 
           <div className="mc-topbar-row mc-topbar-actions">
             <Link
-              className="mc-pill bg-zinc-100 text-zinc-700"
+              className="mc-topbar-link"
               href={`/w/${workspace.slug}/agents`}
               onClick={() => setMobileTopbarOpen(false)}
             >
               Agents
             </Link>
             <Link
-              className="mc-pill bg-zinc-100 text-zinc-700"
+              className="mc-topbar-link"
               href="/workspaces"
               onClick={() => setMobileTopbarOpen(false)}
             >
               Workspaces
             </Link>
-            <div className="text-right">
-              <div className="text-[13px] font-semibold text-zinc-900">
+            <span className="mc-topbar-sep" aria-hidden />
+            <div className="mc-topbar-time">
+              <span className="mc-topbar-time-value">
                 {now.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })}
-              </div>
-              <div className="text-[10px] uppercase tracking-[0.18em] text-zinc-500">
+              </span>
+              <span className="mc-topbar-time-date">
                 {now.toLocaleDateString(undefined, {
                   weekday: "short",
                   month: "short",
                   day: "2-digit",
                 })}
-              </div>
+              </span>
             </div>
-            <span className="mc-chip bg-zinc-100">Notifications {undeliveredTotal ?? 0}</span>
+            <span className="mc-topbar-sep" aria-hidden />
+            <span className="mc-topbar-notif">
+              {undeliveredTotal ?? 0}
+            </span>
             <div className="mc-online">Online</div>
           </div>
         </div>
@@ -941,11 +1135,11 @@ export function MissionControlPage({ workspace }: { workspace: Doc<"workspaces">
           </div>
           <div className="mc-panel-body flex flex-col gap-2" aria-busy={agentsLoading}>
             {agentsLoading ? (
-              <PanelState
-                kind="loading"
-                title="Syncing agent roster"
-                description="Loading active agent presence and role details."
-              />
+              <>
+                <SkeletonAgentCard />
+                <SkeletonAgentCard />
+                <SkeletonAgentCard />
+              </>
             ) : (agents ?? []).length ? (
               (agents ?? []).slice(0, 9).map((a) => (
                 <AgentCard
@@ -953,7 +1147,8 @@ export function MissionControlPage({ workspace }: { workspace: Doc<"workspaces">
                   name={a.name}
                   role={a.role}
                   level={a.level}
-                  status={a.status === "active" ? "WORKING" : a.status.toUpperCase()}
+                  rawStatus={a.status}
+                  status={a.status === "active" ? "Working" : a.status === "blocked" ? "Blocked" : "Idle"}
                 />
               ))
             ) : (
@@ -961,13 +1156,14 @@ export function MissionControlPage({ workspace }: { workspace: Doc<"workspaces">
                 kind="empty"
                 title="No agents yet"
                 description="Add agents from the Agents page to start assigning work."
+                icon="agent"
               />
             )}
           </div>
         </aside>
 
         {/* Mission Queue */}
-        <section className="mc-panel mc-panel-wide mc-panel-queue">
+        <section id="mc-mission-queue" className="mc-panel mc-panel-wide mc-panel-queue">
           <div className="mc-panel-header mc-panel-header-wrap">
             <div className="flex items-center gap-2">
               <span className="mc-dot amber" aria-hidden />
@@ -1057,6 +1253,48 @@ export function MissionControlPage({ workspace }: { workspace: Doc<"workspaces">
                 </Pill>
               ))}
             </div>
+            {allTags.length > 0 && (
+              <div className="mc-tag-filter" role="group" aria-label="Tag filters">
+                <button
+                  className={"mc-tag-pill " + (taskTagFilter === "all" ? "active" : "")}
+                  type="button"
+                  onClick={() => setTaskTagFilter("all")}
+                  aria-pressed={taskTagFilter === "all"}
+                >
+                  All Tags
+                </button>
+                {allTags.map((tag) => (
+                  <button
+                    key={tag}
+                    className={"mc-tag-pill " + (taskTagFilter === tag ? "active" : "")}
+                    type="button"
+                    onClick={() => setTaskTagFilter(tag)}
+                    aria-pressed={taskTagFilter === tag}
+                  >
+                    {tag}
+                  </button>
+                ))}
+              </div>
+            )}
+
+            <div className="flex flex-wrap items-center gap-3 mt-2">
+              <label className="mc-form-row" style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                <span className="mc-form-label" style={{ marginBottom: 0 }}>Priority</span>
+                <select
+                  className="mc-input"
+                  style={{ width: "auto", minWidth: 120 }}
+                  value={taskPriorityFilter}
+                  onChange={(e) => setTaskPriorityFilter(e.target.value)}
+                >
+                  <option value="all">All priorities</option>
+                  <option value="high">High</option>
+                  <option value="medium">Medium</option>
+                  <option value="low">Low</option>
+                  <option value="none">No priority</option>
+                </select>
+              </label>
+            </div>
+
             <div className="mc-filter-feedback" aria-live="polite">
               <div className="mc-filter-feedback-text">{taskFilterSummary}</div>
               {hasTaskFilters ? (
@@ -1067,9 +1305,13 @@ export function MissionControlPage({ workspace }: { workspace: Doc<"workspaces">
                     setTaskQuery("");
                     setTaskStatusFilter("all");
                     setTaskAssigneeFilter("all");
+                    setTaskTagFilter("all");
+                    setTaskPriorityFilter("all");
                   }}
+                  aria-label={`Reset ${activeTaskFilterCount} active filter${activeTaskFilterCount !== 1 ? "s" : ""}`}
                 >
                   Reset
+                  <span className="mc-filter-count">{activeTaskFilterCount}</span>
                 </button>
               ) : null}
             </div>
@@ -1092,13 +1334,20 @@ export function MissionControlPage({ workspace }: { workspace: Doc<"workspaces">
             </div>
 
             {tasksLoading ? (
-              <div className="mc-board-state">
-                <PanelState
-                  kind="loading"
-                  title="Loading mission queue"
-                  description="Tasks are syncing from all workflow columns."
-                />
-              </div>
+              <>
+                {[0, 1, 2].map((i) => (
+                  <div key={i} className="mc-column">
+                    <div className="mc-column-header">
+                      <div className="mc-skeleton-line" style={{ width: 80, height: 14 }} />
+                      <div className="mc-skeleton-line" style={{ width: 24, height: 14 }} />
+                    </div>
+                    <div className="mc-column-body">
+                      <SkeletonCard />
+                      <SkeletonCard />
+                    </div>
+                  </div>
+                ))}
+              </>
             ) : (
               boardColumns.map((col, columnIndex) => {
                 const isDragTarget = dragOverColumn === col.key;
@@ -1160,6 +1409,7 @@ export function MissionControlPage({ workspace }: { workspace: Doc<"workspaces">
                           title={task.title}
                           description={task.description ?? ""}
                           tags={task.tags ?? []}
+                          priority={(task as Record<string, unknown>).priority as string | undefined}
                           assignees={(task.assigneeIds ?? []).map((aid) => ({
                             name: agentNameById.get(aid) ?? "Agent",
                           }))}
@@ -1232,6 +1482,7 @@ export function MissionControlPage({ workspace }: { workspace: Doc<"workspaces">
                             ? "Drag a task here or create a new task to populate this stage."
                             : "Try broader keywords or reset filters to view more tasks."
                         }
+                        icon={col.totalCount === 0 ? "task" : "filter"}
                       />
                     )}
                   </div>
@@ -1348,35 +1599,49 @@ export function MissionControlPage({ workspace }: { workspace: Doc<"workspaces">
                     setFeedWindowFilter("all");
                     setFeedAgentFilter("all");
                   }}
+                  aria-label={`Clear ${activeFeedFilterCount} active filter${activeFeedFilterCount !== 1 ? "s" : ""}`}
                 >
                   Clear filters
+                  <span className="mc-filter-count">{activeFeedFilterCount}</span>
                 </button>
               ) : null}
             </div>
 
             <div className="mc-feed-list">
               {liveFeedLoading ? (
-                <PanelState
-                  kind="loading"
-                  title="Loading live feed"
-                  description="Recent task and comment events are syncing."
-                />
+                <>
+                  <SkeletonFeedItem />
+                  <SkeletonFeedItem />
+                  <SkeletonFeedItem />
+                  <SkeletonFeedItem />
+                </>
               ) : filteredFeed.length ? (
-                filteredFeed.map((entry) => (
-                  <div key={entry._id} className="mc-feed-item">
-                    <div className="mc-feed-avatar" aria-hidden />
-                    <div className="min-w-0">
-                      <div className="mc-feed-meta">
-                        {(entry.agentId ? agentNameById.get(entry.agentId) : null) ?? "System"} ·{" "}
-                        {formatLiveFeedType(entry.type)}
-                      </div>
-                      <div className="mc-feed-message">{entry.message}</div>
-                      <div className="mc-feed-time">
-                        {new Date(entry.createdAt).toLocaleString()}
+                filteredFeed.map((entry) => {
+                  const actor = (entry.agentId ? agentNameById.get(entry.agentId) : null) ?? "System";
+                  const typeClass = entry.type.includes("heartbeat")
+                    ? "mc-feed-type-heartbeat"
+                    : entry.type.includes("status")
+                      ? "mc-feed-type-status"
+                      : "mc-feed-type-task";
+
+                  return (
+                    <div key={entry._id} className="mc-feed-item">
+                      <div className="mc-feed-avatar" aria-hidden />
+                      <div className="min-w-0">
+                        <div className="mc-feed-meta">
+                          {actor}
+                          <span className={`mc-feed-type ${typeClass}`}>
+                            {formatLiveFeedType(entry.type)}
+                          </span>
+                        </div>
+                        <div className="mc-feed-message">{entry.message}</div>
+                        <div className="mc-feed-time">
+                          {new Date(entry.createdAt).toLocaleString()}
+                        </div>
                       </div>
                     </div>
-                  </div>
-                ))
+                  );
+                })
               ) : (
                 <PanelState
                   kind="empty"
@@ -1386,6 +1651,7 @@ export function MissionControlPage({ workspace }: { workspace: Doc<"workspaces">
                       ? "Adjust the feed filters or clear them to see more updates."
                       : "Task, comment, and status updates will appear in real time."
                   }
+                  icon={hasFeedFilters ? "filter" : "feed"}
                 />
               )}
             </div>
