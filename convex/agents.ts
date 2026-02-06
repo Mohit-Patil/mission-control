@@ -13,6 +13,18 @@ export const list = query({
   },
 });
 
+export const getById = query({
+  args: {
+    workspaceId: v.id("workspaces"),
+    id: v.id("agents"),
+  },
+  handler: async (ctx, args) => {
+    const agent = await ctx.db.get(args.id);
+    if (!agent || agent.workspaceId !== args.workspaceId) return null;
+    return agent;
+  },
+});
+
 export const upsert = mutation({
   args: {
     workspaceId: v.id("workspaces"),
