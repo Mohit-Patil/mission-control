@@ -22,6 +22,7 @@ export const run = mutation({
       }));
 
     const agentsToEnsure = [
+      { name: "JARVIS", role: "Coordinator", level: "COORD" as const, status: "active" as const },
       { name: "Mohit", role: "Founder", level: "LEAD" as const, status: "active" as const },
       { name: "Morty", role: "Squad Lead", level: "LEAD" as const, status: "active" as const },
       { name: "Friday", role: "Developer Agent", level: "SPC" as const, status: "active" as const },

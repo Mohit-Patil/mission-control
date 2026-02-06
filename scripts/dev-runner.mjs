@@ -183,10 +183,39 @@ async function main() {
   // Recurring poll
   const timer = setInterval(() => poll(client), interval);
 
+  // ── Coordinator auto-heartbeat (every 15 min) ──
+  const COORD_INTERVAL = config.coordInterval ?? 15 * 60 * 1000;
+  let lastCoordRun = 0;
+
+  async function coordTick() {
+    const now = Date.now();
+    if (now - lastCoordRun < COORD_INTERVAL) return;
+    try {
+      const wsSlug = config.workspace;
+      if (!wsSlug) return;
+      const ws = await client.query(api.workspaces.getBySlug, { slug: wsSlug });
+      if (!ws) return;
+      const allAgents = await client.query(api.agents.list, { workspaceId: ws._id });
+      const coord = allAgents.find(a => a.level === "COORD" && a.status === "active");
+      if (!coord) return;
+      log(`[coord] Triggering JARVIS heartbeat (${coord._id})`);
+      runHeartbeat(ws.slug, coord._id);
+      lastCoordRun = now;
+    } catch (err) {
+      log(`[coord] Error: ${err.message}`);
+    }
+  }
+
+  // Run coordinator check on each poll interval (actual execution gated by COORD_INTERVAL)
+  const coordTimer = setInterval(() => coordTick(), interval);
+  // Also run coordinator check immediately on startup
+  await coordTick();
+
   // Clean shutdown
   const cleanup = () => {
     log("Shutting down run-queue poller");
     clearInterval(timer);
+    clearInterval(coordTimer);
     process.exit(0);
   };
 

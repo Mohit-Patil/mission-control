@@ -20,7 +20,7 @@ export default defineSchema({
 
     name: v.string(),
     role: v.string(),
-    level: v.union(v.literal("LEAD"), v.literal("SPC"), v.literal("INT")),
+    level: v.union(v.literal("COORD"), v.literal("LEAD"), v.literal("SPC"), v.literal("INT")),
     status: v.union(v.literal("idle"), v.literal("active"), v.literal("blocked")),
     currentTaskId: v.optional(v.id("tasks")),
     sessionKey: v.optional(v.string()),

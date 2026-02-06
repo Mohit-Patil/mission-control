@@ -158,7 +158,7 @@ export const updateStatus = mutation({
         .withIndex("by_workspace_name", (q) => q.eq("workspaceId", args.workspaceId))
         .collect();
 
-      const active = agents.filter((a) => a.status === "active");
+      const active = agents.filter((a) => a.status === "active" && a.level !== "COORD");
       const lead = active.find((a) => a.level === "LEAD");
       const pick = lead ?? active[0];
 
@@ -288,6 +288,7 @@ export const claimUnassigned = mutation({
     const agent = await ctx.db.get(args.agentId);
     if (!agent) throw new Error("Agent not found");
     if (agent.workspaceId !== args.workspaceId) throw new Error("Wrong workspace");
+    if (agent.level === "COORD") return null; // Coordinators don't claim tasks
 
     const agentTags = agent.tags ?? [];
     if (agentTags.length === 0) return null;

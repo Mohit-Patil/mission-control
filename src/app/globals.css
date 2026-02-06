@@ -455,6 +455,12 @@ textarea:focus-visible {
   color: var(--mc-text-faint);
 }
 
+.mc-badge-coord {
+  background: linear-gradient(135deg, #fbbf24, #f59e0b);
+  color: #78350f;
+  border-color: #f59e0b;
+}
+
 /* ─── Toolbar ─── */
 .mc-toolbar {
   border-bottom: 1px solid var(--mc-line-2);

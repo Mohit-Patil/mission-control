@@ -7,7 +7,7 @@ import { useParams } from "next/navigation";
 import { api } from "../../../../../convex/_generated/api";
 import type { Doc, Id } from "../../../../../convex/_generated/dataModel";
 
-type AgentLevel = "LEAD" | "SPC" | "INT";
+type AgentLevel = "COORD" | "LEAD" | "SPC" | "INT";
 type AgentStatus = "idle" | "active" | "blocked";
 
 type Draft = {
@@ -329,6 +329,7 @@ export default function WorkspaceAgentsPage() {
                   value={draft.level}
                   onChange={(e) => setDraft((d) => ({ ...d, level: e.target.value as AgentLevel }))}
                 >
+                  <option value="COORD">COORD</option>
                   <option value="LEAD">LEAD</option>
                   <option value="SPC">SPC</option>
                   <option value="INT">INT</option>

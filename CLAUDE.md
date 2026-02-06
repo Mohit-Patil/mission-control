@@ -56,7 +56,7 @@ scripts/
 All tables are workspace-scoped via `workspaceId`.
 
 - **workspaces**: name, slug (indexed)
-- **agents**: name, role, level (LEAD/SPC/INT), status (idle/active/blocked), prompt, systemNotes, sessionKey
+- **agents**: name, role, level (COORD/LEAD/SPC/INT), status (idle/active/blocked), prompt, systemNotes, sessionKey
 - **tasks**: title, description, status (inbox/assigned/in_progress/review/done/blocked), assigneeIds[], tags[], priority
 - **messages**: taskId, content, fromAgentId/fromHuman — @mentions create notifications
 - **activities**: type, message, agentId — feeds the live feed

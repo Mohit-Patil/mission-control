@@ -11,6 +11,7 @@
 import type * as activities from "../activities.js";
 import type * as admin from "../admin.js";
 import type * as agents from "../agents.js";
+import type * as coordinator from "../coordinator.js";
 import type * as liveFeed from "../liveFeed.js";
 import type * as messages from "../messages.js";
 import type * as migrations from "../migrations.js";
@@ -31,6 +32,7 @@ declare const fullApi: ApiFromModules<{
   activities: typeof activities;
   admin: typeof admin;
   agents: typeof agents;
+  coordinator: typeof coordinator;
   liveFeed: typeof liveFeed;
   messages: typeof messages;
   migrations: typeof migrations;

@@ -215,7 +215,7 @@ function AgentCard({
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
           <div className="text-[13px] font-semibold text-zinc-900">{name}</div>
-          <span className="mc-badge shrink-0">{level}</span>
+          <span className={`mc-badge shrink-0${level === "COORD" ? " mc-badge-coord" : ""}`}>{level}</span>
         </div>
         <div className="flex items-center gap-2 mt-0.5">
           <div className="truncate text-[11px] text-zinc-500">{role}</div>
@@ -1473,18 +1473,7 @@ export function MissionControlPage({ workspace }: { workspace: Doc<"workspaces">
                           onClick={() => setSelectedTaskId(task._id)}
                         />
                       ))
-                    ) : (
-                      <PanelState
-                        kind="empty"
-                        title={col.totalCount === 0 ? `No tasks in ${col.title}` : `No matches in ${col.title}`}
-                        description={
-                          col.totalCount === 0
-                            ? "Drag a task here or create a new task to populate this stage."
-                            : "Try broader keywords or reset filters to view more tasks."
-                        }
-                        icon={col.totalCount === 0 ? "task" : "filter"}
-                      />
-                    )}
+                    ) : null}
                   </div>
                 </div>
                 );

@@ -43,7 +43,27 @@ Scripts:
 
 Each cron job payload includes “autonomous heartbeat” instructions so the agent can operate without supervision.
 
-### 4) Activities + Notifications
+### 4) JARVIS Coordinator
+
+JARVIS is the coordinator agent (level: `COORD`). One per workspace. It runs on a 15-minute heartbeat and:
+
+- **Triages inbox**: Assigns unassigned tasks by matching task tags to agent tags, preferring the agent with the lowest active task count.
+- **Monitors stuck work**: Detects tasks stuck in assigned/in_progress for >30 min, reassigns if needed.
+- **Breaks down tasks**: Decomposes large tasks into subtasks tagged with `parent:<taskId>`.
+- **Creates tasks**: Identifies gaps and creates new tasks proactively (max 3 per heartbeat).
+- **Rebalances load**: Redistributes work from overloaded agents to idle ones.
+- **Auto-triggers agents**: After assigning a task, creates a `runRequest` so the agent wakes immediately.
+
+Coordinator actions are visible in the activity feed (type: `coordination`) and as comments on affected tasks.
+
+The coordinator heartbeat is a code path in `scripts/agent-heartbeat.mjs` that activates when `agent.level === "COORD"`. It fetches a full board snapshot via `convex/coordinator.ts:boardSnapshot`, sends a structured prompt to Claude, and parses `ACTION:` lines from the response.
+
+**Safety limits:**
+- Max 8 actions per heartbeat
+- Max 3 task creations per heartbeat
+- COORD agents are excluded from auto-assignment and task claiming
+
+### 5) Activities + Notifications
 Every agent action writes to:
 - `activities`: live feed entries
 - `messages`: timeline messages (optional)
