@@ -53,6 +53,14 @@ function oc(...args) {
   return execFileSync("openclaw", args, { encoding: "utf8" });
 }
 
+function runHeartbeatDirect(workspaceSlug, agentId) {
+  return execFileSync(
+    process.execPath,
+    [path.join(__dirname, "agent-heartbeat.mjs"), "--workspace", workspaceSlug, "--agent", agentId],
+    { encoding: "utf8" }
+  );
+}
+
 async function main() {
   const convexUrl = getConvexUrl();
   if (!convexUrl) throw new Error("Missing CONVEX_URL/NEXT_PUBLIC_CONVEX_URL");
@@ -72,7 +80,16 @@ async function main() {
       if (!ws) throw new Error("Workspace not found for request");
 
       const jobName = `mc-heartbeat:${ws.slug}:${req.agentId}`;
-      oc("cron", "run", "--name", jobName);
+      try {
+        oc("cron", "run", "--name", jobName);
+      } catch (err) {
+        // Local fallback when OpenClaw is not installed.
+        if (String(err?.message ?? err).includes("ENOENT")) {
+          runHeartbeatDirect(ws.slug, req.agentId);
+        } else {
+          throw err;
+        }
+      }
 
       await client.mutation(api.runRequests.markDone, {
         id: req._id,

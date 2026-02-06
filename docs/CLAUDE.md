@@ -209,6 +209,9 @@ sudo scripts/setup-run-queue.sh
 
 This runs `node scripts/run-queue.mjs` every 60s.
 
+**Local fallback:** if OpenClaw isn't installed, the queue worker will call
+`node scripts/agent-heartbeat.mjs --workspace <slug> --agent <id>` directly.
+
 ---
 
 If you want more details (security review, auth implementation, or infra diagrams), I can expand this file further.
