@@ -10,8 +10,7 @@ export const listByStatus = query({
       v.literal("assigned"),
       v.literal("in_progress"),
       v.literal("review"),
-      v.literal("done"),
-      v.literal("blocked")
+      v.literal("done")
     ),
   },
   handler: async (ctx, args) => {
@@ -46,8 +45,7 @@ export const list = query({
         v.literal("assigned"),
         v.literal("in_progress"),
         v.literal("review"),
-        v.literal("done"),
-        v.literal("blocked")
+        v.literal("done")
       )
     ),
     assigneeId: v.optional(v.id("agents")),
@@ -82,8 +80,7 @@ export const create = mutation({
         v.literal("assigned"),
         v.literal("in_progress"),
         v.literal("review"),
-        v.literal("done"),
-        v.literal("blocked")
+        v.literal("done")
       )
     ),
     priority: v.optional(v.union(v.literal("low"), v.literal("medium"), v.literal("high"))),
@@ -122,8 +119,7 @@ export const updateStatus = mutation({
       v.literal("assigned"),
       v.literal("in_progress"),
       v.literal("review"),
-      v.literal("done"),
-      v.literal("blocked")
+      v.literal("done")
     ),
     fromAgentId: v.optional(v.id("agents")),
     fromHuman: v.optional(v.boolean()),
@@ -381,6 +377,17 @@ export const remove = mutation({
       .collect();
     for (const m of messages) {
       await ctx.db.delete(m._id);
+    }
+
+    // Delete related documents
+    const documents = await ctx.db
+      .query("documents")
+      .withIndex("by_workspace_task", (q) =>
+        q.eq("workspaceId", args.workspaceId).eq("taskId", args.id)
+      )
+      .collect();
+    for (const d of documents) {
+      await ctx.db.delete(d._id);
     }
 
     await ctx.db.delete(args.id);

@@ -57,11 +57,18 @@ export const listForAgent = query({
 
 export const markDone = mutation({
   args: {
+    workspaceId: v.optional(v.id("workspaces")),
     id: v.id("runRequests"),
     status: v.union(v.literal("done"), v.literal("failed")),
     note: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
+    const existing = await ctx.db.get(args.id);
+    if (!existing) throw new Error("Run request not found");
+    if (args.workspaceId && existing.workspaceId !== args.workspaceId) {
+      throw new Error("Wrong workspace");
+    }
+
     await ctx.db.patch(args.id, {
       status: args.status,
       note: args.note,

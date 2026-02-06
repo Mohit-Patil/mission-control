@@ -49,8 +49,7 @@ export default defineSchema({
       v.literal("assigned"),
       v.literal("in_progress"),
       v.literal("review"),
-      v.literal("done"),
-      v.literal("blocked")
+      v.literal("done")
     ),
     assigneeIds: v.array(v.id("agents")),
     tags: v.array(v.string()),

@@ -12,8 +12,7 @@ type TaskStatus =
   | "assigned"
   | "in_progress"
   | "review"
-  | "done"
-  | "blocked";
+  | "done";
 
 type TaskStatusFilter = "all" | TaskStatus;
 type LiveFeedFilter = "all" | "tasks" | "comments" | "decisions" | "docs" | "status";
@@ -25,7 +24,6 @@ const TASK_STATUS_META: ReadonlyArray<{ key: TaskStatus; title: string }> = [
   { key: "in_progress", title: "In Progress" },
   { key: "review", title: "Review" },
   { key: "done", title: "Done" },
-  { key: "blocked", title: "Blocked" },
 ];
 
 const LIVE_FEED_FILTERS: ReadonlyArray<{ key: LiveFeedFilter; label: string }> = [
@@ -466,7 +464,6 @@ function NewTaskModal({
               <option value="in_progress">In Progress</option>
               <option value="review">Review</option>
               <option value="done">Done</option>
-              <option value="blocked">Blocked</option>
             </select>
           </div>
 
@@ -556,7 +553,6 @@ function TaskDetailDrawer({
                 <option value="in_progress">In Progress</option>
                 <option value="review">Review</option>
                 <option value="done">Done</option>
-                <option value="blocked">Blocked</option>
               </select>
               <div className="ml-auto text-[10px] uppercase tracking-[0.22em] text-zinc-400">
                 Click to move
@@ -760,7 +756,6 @@ export function MissionControlPage({ workspace }: { workspace: Doc<"workspaces">
   });
   const review = useQuery(api.tasks.listByStatus, { workspaceId: workspace._id, status: "review" });
   const done = useQuery(api.tasks.listByStatus, { workspaceId: workspace._id, status: "done" });
-  const blocked = useQuery(api.tasks.listByStatus, { workspaceId: workspace._id, status: "blocked" });
   const liveFeed = useQuery(api.liveFeed.latest, { workspaceId: workspace._id });
   const undeliveredTotal = useQuery(api.notifications.totalUndelivered, {
     workspaceId: workspace._id,
@@ -811,9 +806,8 @@ export function MissionControlPage({ workspace }: { workspace: Doc<"workspaces">
         { key: "in_progress", title: "In Progress", tasks: inProgress ?? [] },
         { key: "review", title: "Review", tasks: review ?? [] },
         { key: "done", title: "Done", tasks: done ?? [] },
-        { key: "blocked", title: "Blocked", tasks: blocked ?? [] },
       ] as const,
-    [inbox, assigned, inProgress, review, done, blocked]
+    [inbox, assigned, inProgress, review, done]
   );
 
   const selectedTask = useMemo(() => {
@@ -844,8 +838,8 @@ export function MissionControlPage({ workspace }: { workspace: Doc<"workspaces">
   const activeAgents = useMemo(() => (agents ?? []).filter((a) => a.status === "active").length, [agents]);
   const totalTasks = useMemo(() => columns.reduce((sum, c) => sum + c.tasks.length, 0), [columns]);
   const tasksLoading = useMemo(
-    () => [inbox, assigned, inProgress, review, done, blocked].some((bucket) => bucket === undefined),
-    [inbox, assigned, inProgress, review, done, blocked]
+    () => [inbox, assigned, inProgress, review, done].some((bucket) => bucket === undefined),
+    [inbox, assigned, inProgress, review, done]
   );
   const agentsLoading = agents === undefined;
   const liveFeedLoading = liveFeed === undefined;

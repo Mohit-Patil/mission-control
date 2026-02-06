@@ -221,7 +221,7 @@ async function executeCoordinatorActions(client, workspaceId, coordinatorId, act
         case "STATUS": {
           const taskId = action.params.taskId;
           const status = action.params.status;
-          const validStatuses = ["inbox", "assigned", "in_progress", "review", "done", "blocked"];
+          const validStatuses = ["inbox", "assigned", "in_progress", "review", "done"];
           if (!taskId || !validStatuses.includes(status)) { results.push(`STATUS skipped: invalid`); break; }
           await client.mutation(api.tasks.updateStatus, {
             workspaceId, id: taskId, status, fromAgentId: coordinatorId,
@@ -279,11 +279,10 @@ async function main() {
     const snapshot = await fetchBoardSnapshot(client, ws._id);
 
     const inboxCount = snapshot.tasks.filter(t => t.status === "inbox").length;
-    const blockedCount = snapshot.tasks.filter(t => t.status === "blocked").length;
     const activeCount = snapshot.tasks.filter(t => ["assigned", "in_progress", "review"].includes(t.status)).length;
     const agentCount = snapshot.agents.length;
 
-    const msg = `${agentName} coordination: ${inboxCount} inbox, ${activeCount} active, ${blockedCount} blocked, ${agentCount} agents`;
+    const msg = `${agentName} coordination: ${inboxCount} inbox, ${activeCount} active, ${agentCount} agents`;
 
     await client.mutation(api.activities.create, {
       workspaceId: ws._id,
@@ -344,8 +343,8 @@ async function main() {
       "  ACTION: TRIGGER | agentName=<name>",
       "    Wake up an agent immediately (creates a Run Now request).",
       "",
-      "  ACTION: STATUS | taskId=<id> | status=<inbox|assigned|in_progress|review|done|blocked>",
-      "    Change a task's status (e.g., move blocked tasks back to inbox for re-triage).",
+      "  ACTION: STATUS | taskId=<id> | status=<inbox|assigned|in_progress|review|done>",
+      "    Change a task's status (e.g., move stale tasks back to inbox for re-triage).",
       "",
       "## Rules",
       "1. Triage ALL inbox tasks — match task tags to agent tags, assign to the agent with lowest load.",
@@ -449,6 +448,16 @@ async function main() {
       (task.status === "review" && minutes >= 5);
 
     if (shouldWork && (force || sinceAgentMsg >= 2)) {
+      // Move to in_progress immediately when picking up an assigned task
+      if (task.status === "assigned") {
+        await client.mutation(api.tasks.updateStatus, {
+          workspaceId: ws._id,
+          id: task._id,
+          status: "in_progress",
+          fromAgentId: agentId,
+        });
+      }
+
       const recentMessages = messages.slice(-5).map((m) => {
         const who = m.fromHuman ? "Human" : (m.fromAgentId ? agentNameById(m.fromAgentId) : "System");
         return `${who}: ${m.content}`;
@@ -474,7 +483,6 @@ async function main() {
         "  STATUS: in_progress   — you started work but more remains",
         "  STATUS: review        — you finished the work and it needs human review",
         "  STATUS: done          — the task is fully complete, no further work needed",
-        "  STATUS: blocked       — you are stuck and need human help to proceed",
         "",
         "Choose the status that honestly reflects the state of the work. Do not default to in_progress",
         "if the work is actually complete.",
@@ -499,13 +507,12 @@ async function main() {
       }
 
       // Parse agent-declared status from response
-      const statusMatch = response.match(/\bSTATUS:\s*(in_progress|review|done|blocked)\b/i);
+      const statusMatch = response.match(/\bSTATUS:\s*(in_progress|review|done)\b/i);
       const declaredStatus = statusMatch ? statusMatch[1].toLowerCase() : null;
 
       const VALID_TRANSITIONS = {
-        assigned: ["in_progress", "review", "done", "blocked"],
-        in_progress: ["review", "done", "blocked"],
-        review: ["done", "blocked"],
+        in_progress: ["review", "done"],
+        review: ["done"],
       };
 
       const allowed = VALID_TRANSITIONS[task.status] ?? [];
@@ -515,14 +522,6 @@ async function main() {
           workspaceId: ws._id,
           id: task._id,
           status: declaredStatus,
-          fromAgentId: agentId,
-        });
-      } else if (task.status === "assigned") {
-        // Fallback: at minimum move out of assigned when work was attempted
-        await client.mutation(api.tasks.updateStatus, {
-          workspaceId: ws._id,
-          id: task._id,
-          status: "in_progress",
           fromAgentId: agentId,
         });
       }
