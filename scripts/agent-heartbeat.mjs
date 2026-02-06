@@ -89,8 +89,9 @@ async function main() {
   const args = parseArgs(process.argv.slice(2));
   const workspaceSlug = args.workspace;
   const agentId = args.agent;
+  const force = Boolean(args.force);
   if (!workspaceSlug || !agentId) {
-    console.error("Usage: --workspace <slug> --agent <agentId>");
+    console.error("Usage: --workspace <slug> --agent <agentId> [--force]");
     process.exit(2);
   }
 
@@ -144,11 +145,12 @@ async function main() {
     const sinceAgentMsg = lastAgentMsg ? (now - lastAgentMsg.createdAt) / 60000 : Infinity;
 
     const shouldWork =
+      force ||
       (task.status === "assigned" && minutes >= 2) ||
       (task.status === "in_progress" && minutes >= 5) ||
       (task.status === "review" && minutes >= 5);
 
-    if (shouldWork && sinceAgentMsg >= 2) {
+    if (shouldWork && (force || sinceAgentMsg >= 2)) {
       const prompt = [
         `You are ${agentName}${agent?.role ? ` (${agent.role})` : ""}.`,
         `Workspace: ${ws.slug}.`,

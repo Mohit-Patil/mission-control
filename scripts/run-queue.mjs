@@ -56,7 +56,14 @@ function oc(...args) {
 function runHeartbeatDirect(workspaceSlug, agentId) {
   return execFileSync(
     process.execPath,
-    [path.join(__dirname, "agent-heartbeat.mjs"), "--workspace", workspaceSlug, "--agent", agentId],
+    [
+      path.join(__dirname, "agent-heartbeat.mjs"),
+      "--workspace",
+      workspaceSlug,
+      "--agent",
+      agentId,
+      "--force",
+    ],
     { encoding: "utf8" }
   );
 }
