@@ -138,7 +138,7 @@ async function main() {
       await client.mutation(api.messages.create, {
         workspaceId: ws._id,
         taskId: task._id,
-        content: `Progress update on “${task.title}”: key UI adjustments in progress. Will share a concrete diff next.`,
+        content: `Progress update on “${task.title}”: core work complete. Summary: updated key areas and validated behavior. Ready for review.`,
         fromAgentId: agentId,
       });
       await client.mutation(api.tasks.updateStatus, {
@@ -151,7 +151,7 @@ async function main() {
       await client.mutation(api.messages.create, {
         workspaceId: ws._id,
         taskId: task._id,
-        content: `Completed “${task.title}”. Ready for review/merge.`,
+        content: `Completed “${task.title}”. If no changes are needed, please mark done.`,
         fromAgentId: agentId,
       });
       await client.mutation(api.tasks.updateStatus, {
