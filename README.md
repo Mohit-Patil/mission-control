@@ -77,6 +77,17 @@ The migration is **idempotent** (safe to run multiple times).
 - `npm run build`
 - `npm run convex:dev`
 
+## Safe Queue: "Run Now" for agents
+
+The Agents page has a **Run Now** button that creates a run request in Convex.
+To execute those safely, run this queue processor on a schedule (recommended every minute):
+
+```bash
+node scripts/run-queue.mjs
+```
+
+This will call the agent's heartbeat cron job immediately and then mark the request done.
+
 ## Notes
 
 - **Kanban drag & drop:** drag task cards between columns, or use keyboard:

@@ -58,6 +58,7 @@ export default function WorkspaceAgentsPage() {
     workspace ? { workspaceId: workspace._id } : "skip"
   );
   const upsert = useMutation(api.agents.upsert);
+  const createRunRequest = useMutation(api.runRequests.create);
 
   const [selectedId, setSelectedId] = useState<Id<"agents"> | "new" | null>("new");
   const selected = useMemo(() => {
@@ -183,6 +184,21 @@ export default function WorkspaceAgentsPage() {
                 >
                   Reset
                 </button>
+                {selectedId !== "new" ? (
+                  <button
+                    className="mc-pill bg-zinc-100 text-zinc-700"
+                    type="button"
+                    onClick={async () => {
+                      if (!workspace || !selectedId || selectedId === "new") return;
+                      await createRunRequest({
+                        workspaceId: workspace._id,
+                        agentId: selectedId,
+                      });
+                    }}
+                  >
+                    Run Now
+                  </button>
+                ) : null}
                 <button
                   className="mc-pill bg-zinc-900 text-white"
                   type="button"

@@ -109,4 +109,15 @@ export default defineSchema({
   })
     .index("by_workspace_delivered", ["workspaceId", "delivered"])
     .index("by_workspace_agent", ["workspaceId", "mentionedAgentId"]),
+
+  runRequests: defineTable({
+    workspaceId: v.optional(v.id("workspaces")),
+    agentId: v.id("agents"),
+    status: v.union(v.literal("pending"), v.literal("done"), v.literal("failed")),
+    note: v.optional(v.string()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_status", ["status"])
+    .index("by_workspace_status", ["workspaceId", "status"]),
 });

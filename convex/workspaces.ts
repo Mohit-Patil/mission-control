@@ -26,6 +26,13 @@ export const getBySlug = query({
   },
 });
 
+export const getById = query({
+  args: { id: v.id("workspaces") },
+  handler: async (ctx, args) => {
+    return await ctx.db.get(args.id);
+  },
+});
+
 export const create = mutation({
   args: {
     name: v.string(),
