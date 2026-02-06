@@ -361,3 +361,35 @@ export const unassign = mutation({
     });
   },
 });
+
+export const remove = mutation({
+  args: {
+    workspaceId: v.id("workspaces"),
+    id: v.id("tasks"),
+  },
+  handler: async (ctx, args) => {
+    const task = await ctx.db.get(args.id);
+    if (!task) throw new Error("Task not found");
+    if (task.workspaceId !== args.workspaceId) throw new Error("Wrong workspace");
+
+    // Delete related messages
+    const messages = await ctx.db
+      .query("messages")
+      .withIndex("by_workspace_task", (q) =>
+        q.eq("workspaceId", args.workspaceId).eq("taskId", args.id)
+      )
+      .collect();
+    for (const m of messages) {
+      await ctx.db.delete(m._id);
+    }
+
+    await ctx.db.delete(args.id);
+
+    await ctx.db.insert("activities", {
+      workspaceId: args.workspaceId,
+      type: "task_deleted",
+      message: `Task deleted: "${task.title}"`,
+      createdAt: Date.now(),
+    });
+  },
+});

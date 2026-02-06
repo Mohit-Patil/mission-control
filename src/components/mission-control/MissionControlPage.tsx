@@ -487,7 +487,9 @@ function TaskDetailDrawer({
   const createMessage = useMutation(api.messages.create);
   const updateStatus = useMutation(api.tasks.updateStatus);
   const setAssignees = useMutation(api.tasks.setAssignees);
+  const removeTask = useMutation(api.tasks.remove);
   const [draft, setDraft] = useState("");
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   if (!open) return null;
 
@@ -684,6 +686,38 @@ function TaskDetailDrawer({
           <div className="text-[10px] uppercase tracking-[0.22em] text-zinc-400">
             Updated {task ? new Date(task.updatedAt).toLocaleString() : ""}
           </div>
+          {confirmDelete ? (
+            <div className="flex items-center gap-2">
+              <span className="text-[11px] text-rose-600">Delete this task?</span>
+              <button
+                className="mc-pill bg-rose-600 text-white text-[11px]"
+                type="button"
+                onClick={async () => {
+                  if (!taskId) return;
+                  await removeTask({ workspaceId, id: taskId });
+                  setConfirmDelete(false);
+                  onClose();
+                }}
+              >
+                Yes, delete
+              </button>
+              <button
+                className="mc-pill bg-zinc-100 text-zinc-700 text-[11px]"
+                type="button"
+                onClick={() => setConfirmDelete(false)}
+              >
+                Cancel
+              </button>
+            </div>
+          ) : (
+            <button
+              className="mc-pill bg-zinc-100 text-rose-600 text-[11px]"
+              type="button"
+              onClick={() => setConfirmDelete(true)}
+            >
+              Delete task
+            </button>
+          )}
         </div>
       </aside>
     </div>
