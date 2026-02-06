@@ -33,3 +33,27 @@ export const clearTasksAndAgents = mutation({
     return { ok: true, workspace: ws.slug, tasks, agents };
   },
 });
+
+export const normalizeAssignedTasks = mutation({
+  args: { slug: v.string() },
+  handler: async (ctx, args) => {
+    const ws = await ctx.db
+      .query("workspaces")
+      .withIndex("by_slug", (q) => q.eq("slug", args.slug))
+      .unique();
+    if (!ws) throw new Error(`Workspace not found: ${args.slug}`);
+
+    let updated = 0;
+    for (const t of await ctx.db
+      .query("tasks")
+      .withIndex("by_workspace_updated", (q) => q.eq("workspaceId", ws._id))
+      .collect()) {
+      if (t.status === "inbox" && (t.assigneeIds ?? []).length > 0) {
+        await ctx.db.patch(t._id, { status: "assigned", updatedAt: Date.now() });
+        updated++;
+      }
+    }
+
+    return { ok: true, workspace: ws.slug, updated };
+  },
+});
