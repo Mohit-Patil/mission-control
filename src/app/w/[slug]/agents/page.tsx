@@ -57,6 +57,8 @@ export default function WorkspaceAgentsPage() {
     api.agents.list,
     workspace ? { workspaceId: workspace._id } : "skip"
   );
+
+  const [selectedId, setSelectedId] = useState<Id<"agents"> | "new" | null>("new");
   const upsert = useMutation(api.agents.upsert);
   const createRunRequest = useMutation(api.runRequests.create);
   const recentRuns = useQuery(
@@ -65,8 +67,6 @@ export default function WorkspaceAgentsPage() {
       ? { workspaceId: workspace._id, agentId: selectedId, limit: 1 }
       : "skip"
   );
-
-  const [selectedId, setSelectedId] = useState<Id<"agents"> | "new" | null>("new");
   const [info, setInfo] = useState<string | null>(null);
   const selected = useMemo(() => {
     if (!agents || !selectedId || selectedId === "new") return null;
