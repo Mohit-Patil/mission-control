@@ -61,6 +61,7 @@ export default function WorkspaceAgentsPage() {
   const createRunRequest = useMutation(api.runRequests.create);
 
   const [selectedId, setSelectedId] = useState<Id<"agents"> | "new" | null>("new");
+  const [info, setInfo] = useState<string | null>(null);
   const selected = useMemo(() => {
     if (!agents || !selectedId || selectedId === "new") return null;
     return agents.find((a) => a._id === selectedId) ?? null;
@@ -69,14 +70,23 @@ export default function WorkspaceAgentsPage() {
   const [draft, setDraft] = useState<Draft>(() => toDraft(null));
   const [error, setError] = useState<string | null>(null);
 
+  useEffect(() => {
+    if (!agents || agents.length === 0) return;
+    if (selectedId === "new") {
+      setSelectedId(agents[0]._id);
+    }
+  }, [agents, selectedId]);
+
   const selectNew = () => {
     setError(null);
+    setInfo(null);
     setSelectedId("new");
     setDraft(toDraft(null));
   };
 
   const selectExisting = (agent: Doc<"agents">) => {
     setError(null);
+    setInfo(null);
     setSelectedId(agent._id);
     setDraft(toDraft(agent));
   };
@@ -190,10 +200,15 @@ export default function WorkspaceAgentsPage() {
                     type="button"
                     onClick={async () => {
                       if (!workspace || !selectedId || selectedId === "new") return;
-                      await createRunRequest({
-                        workspaceId: workspace._id,
-                        agentId: selectedId,
-                      });
+                      try {
+                        await createRunRequest({
+                          workspaceId: workspace._id,
+                          agentId: selectedId,
+                        });
+                        setInfo("Run request queued. Agent will run within ~1 minute.");
+                      } catch (err) {
+                        setError(errorMessage(err));
+                      }
                     }}
                   >
                     Run Now
@@ -224,6 +239,7 @@ export default function WorkspaceAgentsPage() {
                       });
                       setSelectedId(id);
                       setDraft((d) => ({ ...d, id }));
+                      setInfo("Agent saved.");
                     } catch (e: unknown) {
                       setError(errorMessage(e) || "Failed to save agent");
                     }
@@ -234,7 +250,16 @@ export default function WorkspaceAgentsPage() {
               </div>
             </div>
 
-            {error ? <div className="mt-3 text-[12px] text-red-600">{error}</div> : null}
+            {info ? (
+              <div className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-[12px] text-emerald-700">
+                {info}
+              </div>
+            ) : null}
+            {error ? (
+              <div className="mt-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-[12px] text-rose-700">
+                {error}
+              </div>
+            ) : null}
 
             <div className="mt-5 grid grid-cols-2 gap-3">
               <div className="mc-form-row">
