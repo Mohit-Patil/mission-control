@@ -212,6 +212,12 @@ This runs `node scripts/run-queue.mjs` every 60s.
 **Local fallback:** if OpenClaw isn't installed, the queue worker will call
 `node scripts/agent-heartbeat.mjs --workspace <slug> --agent <id>` directly.
 
+### Codex CLI (Route B)
+The heartbeat uses a local **Codex CLI** to generate real task updates.
+
+- Command: `codex` (override with `CODEX_CMD` env var)
+- Prompt is written to stdin; stdout is posted as a task message.
+
 ---
 
 If you want more details (security review, auth implementation, or infra diagrams), I can expand this file further.

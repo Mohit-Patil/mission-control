@@ -14,6 +14,7 @@ import process from "node:process";
 import { fileURLToPath } from "node:url";
 import { ConvexHttpClient } from "convex/browser";
 import { api } from "../convex/_generated/api.js";
+import { spawnSync } from "node:child_process";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -68,6 +69,20 @@ function parseArgs(argv) {
   return out;
 }
 
+function runCodex(prompt) {
+  const cmd = process.env.CODEX_CMD || "codex";
+  const res = spawnSync(cmd, [], {
+    input: prompt,
+    encoding: "utf8",
+    maxBuffer: 1024 * 1024 * 5,
+  });
+  if (res.error) throw res.error;
+  if (res.status !== 0) {
+    throw new Error(`codex exited with ${res.status}: ${res.stderr || res.stdout}`);
+  }
+  return (res.stdout || "").trim();
+}
+
 async function main() {
   const convexUrl = getConvexUrl();
   if (!convexUrl) throw new Error("Missing CONVEX_URL/NEXT_PUBLIC_CONVEX_URL");
@@ -114,52 +129,74 @@ async function main() {
     message: msg,
   });
 
-  // Lightweight auto-progress loop (no LLM): advance one task if it's been idle.
+  // Auto-progress loop with Codex CLI.
   const now = Date.now();
   const task = tasks.find((t) => ["assigned", "in_progress", "review"].includes(t.status));
   if (task) {
     const ageMs = now - (task.updatedAt ?? task.createdAt ?? now);
     const minutes = ageMs / 60000;
 
-    if (task.status === "assigned" && minutes >= 2) {
-      await client.mutation(api.messages.create, {
-        workspaceId: ws._id,
-        taskId: task._id,
-        content: `Starting work on “${task.title}”. I’ll share updates shortly.`,
-        fromAgentId: agentId,
-      });
-      await client.mutation(api.tasks.updateStatus, {
-        workspaceId: ws._id,
-        id: task._id,
-        status: "in_progress",
-        fromAgentId: agentId,
-      });
-    } else if (task.status === "in_progress" && minutes >= 5) {
-      await client.mutation(api.messages.create, {
-        workspaceId: ws._id,
-        taskId: task._id,
-        content: `Progress update on “${task.title}”: core work complete. Summary: updated key areas and validated behavior. Ready for review.`,
-        fromAgentId: agentId,
-      });
-      await client.mutation(api.tasks.updateStatus, {
-        workspaceId: ws._id,
-        id: task._id,
-        status: "review",
-        fromAgentId: agentId,
-      });
-    } else if (task.status === "review" && minutes >= 5) {
-      await client.mutation(api.messages.create, {
-        workspaceId: ws._id,
-        taskId: task._id,
-        content: `Completed “${task.title}”. If no changes are needed, please mark done.`,
-        fromAgentId: agentId,
-      });
-      await client.mutation(api.tasks.updateStatus, {
-        workspaceId: ws._id,
-        id: task._id,
-        status: "done",
-        fromAgentId: agentId,
-      });
+    const messages = await client.query(api.messages.listByTask, {
+      workspaceId: ws._id,
+      taskId: task._id,
+    });
+    const lastAgentMsg = [...messages].reverse().find((m) => m.fromAgentId === agentId);
+    const sinceAgentMsg = lastAgentMsg ? (now - lastAgentMsg.createdAt) / 60000 : Infinity;
+
+    const shouldWork =
+      (task.status === "assigned" && minutes >= 2) ||
+      (task.status === "in_progress" && minutes >= 5) ||
+      (task.status === "review" && minutes >= 5);
+
+    if (shouldWork && sinceAgentMsg >= 2) {
+      const prompt = [
+        `You are ${agentName}${agent?.role ? ` (${agent.role})` : ""}.`,
+        `Workspace: ${ws.slug}.`,
+        `Task: ${task.title}`,
+        task.description ? `Description: ${task.description}` : "",
+        "Respond with a concise progress update and next steps.",
+      ]
+        .filter(Boolean)
+        .join("\n");
+
+      let response = "";
+      try {
+        response = runCodex(prompt);
+      } catch (err) {
+        response = `Codex error: ${String(err?.message ?? err)}`;
+      }
+
+      if (response) {
+        await client.mutation(api.messages.create, {
+          workspaceId: ws._id,
+          taskId: task._id,
+          content: response,
+          fromAgentId: agentId,
+        });
+      }
+
+      if (task.status === "assigned" && minutes >= 2) {
+        await client.mutation(api.tasks.updateStatus, {
+          workspaceId: ws._id,
+          id: task._id,
+          status: "in_progress",
+          fromAgentId: agentId,
+        });
+      } else if (task.status === "in_progress" && minutes >= 5) {
+        await client.mutation(api.tasks.updateStatus, {
+          workspaceId: ws._id,
+          id: task._id,
+          status: "review",
+          fromAgentId: agentId,
+        });
+      } else if (task.status === "review" && minutes >= 5) {
+        await client.mutation(api.tasks.updateStatus, {
+          workspaceId: ws._id,
+          id: task._id,
+          status: "done",
+          fromAgentId: agentId,
+        });
+      }
     }
   }
 
