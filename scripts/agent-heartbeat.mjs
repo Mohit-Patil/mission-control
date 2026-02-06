@@ -114,6 +114,55 @@ async function main() {
     message: msg,
   });
 
+  // Lightweight auto-progress loop (no LLM): advance one task if it's been idle.
+  const now = Date.now();
+  const task = tasks.find((t) => ["assigned", "in_progress", "review"].includes(t.status));
+  if (task) {
+    const ageMs = now - (task.updatedAt ?? task.createdAt ?? now);
+    const minutes = ageMs / 60000;
+
+    if (task.status === "assigned" && minutes >= 2) {
+      await client.mutation(api.messages.create, {
+        workspaceId: ws._id,
+        taskId: task._id,
+        content: `Starting work on “${task.title}”. I’ll share updates shortly.`,
+        fromAgentId: agentId,
+      });
+      await client.mutation(api.tasks.updateStatus, {
+        workspaceId: ws._id,
+        id: task._id,
+        status: "in_progress",
+        fromAgentId: agentId,
+      });
+    } else if (task.status === "in_progress" && minutes >= 5) {
+      await client.mutation(api.messages.create, {
+        workspaceId: ws._id,
+        taskId: task._id,
+        content: `Progress update on “${task.title}”: key UI adjustments in progress. Will share a concrete diff next.`,
+        fromAgentId: agentId,
+      });
+      await client.mutation(api.tasks.updateStatus, {
+        workspaceId: ws._id,
+        id: task._id,
+        status: "review",
+        fromAgentId: agentId,
+      });
+    } else if (task.status === "review" && minutes >= 5) {
+      await client.mutation(api.messages.create, {
+        workspaceId: ws._id,
+        taskId: task._id,
+        content: `Completed “${task.title}”. Ready for review/merge.`,
+        fromAgentId: agentId,
+      });
+      await client.mutation(api.tasks.updateStatus, {
+        workspaceId: ws._id,
+        id: task._id,
+        status: "done",
+        fromAgentId: agentId,
+      });
+    }
+  }
+
   process.stdout.write(msg + "\n");
 }
 
