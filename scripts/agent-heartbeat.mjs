@@ -70,7 +70,7 @@ function parseArgs(argv) {
   return out;
 }
 
-function runAgent(prompt) {
+function runAgent(prompt, model) {
   const customCmd = process.env.HEARTBEAT_CMD;
   if (customCmd) {
     const res = spawnSync(customCmd, { input: prompt, encoding: "utf8", shell: true, maxBuffer: 1024 * 1024 * 10, timeout: 5 * 60 * 1000 });
@@ -81,7 +81,11 @@ function runAgent(prompt) {
 
   // Use claude CLI with --print for non-interactive output
   const projectRoot = path.join(__dirname, "..");
-  const res = spawnSync("claude", ["--print", "--dangerously-skip-permissions", "-p", prompt], {
+  const cliArgs = ["--print", "--dangerously-skip-permissions"];
+  if (model) cliArgs.push("--model", model);
+  cliArgs.push("-p", prompt);
+
+  const res = spawnSync("claude", cliArgs, {
     cwd: projectRoot,
     encoding: "utf8",
     maxBuffer: 1024 * 1024 * 10,
@@ -91,7 +95,7 @@ function runAgent(prompt) {
   if (res.error) {
     // Fallback: try npx claude if bare command fails
     if (res.error.code === "ENOENT") {
-      const res2 = spawnSync("npx", ["claude", "--print", "--dangerously-skip-permissions", "-p", prompt], {
+      const res2 = spawnSync("npx", ["claude", ...cliArgs], {
         cwd: projectRoot,
         encoding: "utf8",
         maxBuffer: 1024 * 1024 * 10,
@@ -108,6 +112,11 @@ function runAgent(prompt) {
   }
   return (res.stdout || "").trim();
 }
+
+// Model selection: COORD uses haiku (cheap, fast), dev agents use default (opus)
+const MODEL_BY_LEVEL = {
+  COORD: "haiku",
+};
 
 async function fetchBoardSnapshot(client, workspaceId) {
   return await client.query(api.coordinator.boardSnapshot, { workspaceId });
@@ -353,7 +362,7 @@ async function main() {
 
     let response = "";
     try {
-      response = runAgent(prompt);
+      response = runAgent(prompt, MODEL_BY_LEVEL.COORD);
     } catch (err) {
       response = `Coordinator error: ${String(err?.message ?? err)}`;
     }
