@@ -51,3 +51,27 @@ export const markDone = mutation({
     });
   },
 });
+
+export const clearPending = mutation({
+  args: {
+    workspaceId: v.id("workspaces"),
+  },
+  handler: async (ctx, args) => {
+    const pending = await ctx.db
+      .query("runRequests")
+      .withIndex("by_workspace_status", (q) =>
+        q.eq("workspaceId", args.workspaceId).eq("status", "pending")
+      )
+      .collect();
+
+    for (const r of pending) {
+      await ctx.db.patch(r._id, {
+        status: "done",
+        note: "cleared",
+        updatedAt: Date.now(),
+      });
+    }
+
+    return { cleared: pending.length };
+  },
+});

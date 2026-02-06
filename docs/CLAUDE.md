@@ -190,18 +190,24 @@ If you need a migration:
 
 ## Ops & Scheduling
 
-OpenClaw cron jobs manage:
-- per‑agent heartbeats
-- run‑queue worker
+OpenClaw cron jobs manage per‑agent heartbeats. The **Run Now** queue is handled by a **systemd timer** (recommended) so it works locally without OpenClaw.
 
+### Heartbeats (OpenClaw)
 Key job names:
 - `mc-heartbeat:<workspaceSlug>:<agentId>`
-- `Mission Control: run-queue worker`
 
-To resync all heartbeats:
+Resync:
 ```bash
 node scripts/heartbeat-sync-openclaw.mjs
 ```
+
+### Run Queue (systemd timer)
+Install locally or on server:
+```bash
+sudo scripts/setup-run-queue.sh
+```
+
+This runs `node scripts/run-queue.mjs` every 60s.
 
 ---
 
