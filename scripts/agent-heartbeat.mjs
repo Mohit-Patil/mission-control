@@ -99,9 +99,12 @@ async function main() {
   // Post a small activity note so you can see heartbeats.
   const agent = (await client.query(api.agents.getById, { workspaceId: ws._id, id: agentId })) ?? null;
   const agentName = agent?.name ?? agentId;
+  const topTask = tasks[0];
+  const summary = topTask ? `top: “${topTask.title}” (${topTask.status})` : null;
+
   const msg =
     undelivered.length || tasks.length
-      ? `${agentName} heartbeat: ${tasks.length} tasks / ${undelivered.length} notifications`
+      ? `${agentName} heartbeat: ${tasks.length} tasks / ${undelivered.length} notifications${summary ? ` • ${summary}` : ""}`
       : `${agentName} heartbeat: idle`;
 
   await client.mutation(api.activities.create, {

@@ -59,6 +59,12 @@ export default function WorkspaceAgentsPage() {
   );
   const upsert = useMutation(api.agents.upsert);
   const createRunRequest = useMutation(api.runRequests.create);
+  const recentRuns = useQuery(
+    api.runRequests.listForAgent,
+    workspace && selectedId && selectedId !== "new"
+      ? { workspaceId: workspace._id, agentId: selectedId, limit: 1 }
+      : "skip"
+  );
 
   const [selectedId, setSelectedId] = useState<Id<"agents"> | "new" | null>("new");
   const [info, setInfo] = useState<string | null>(null);
@@ -253,6 +259,21 @@ export default function WorkspaceAgentsPage() {
             {info ? (
               <div className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-[12px] text-emerald-700">
                 {info}
+              </div>
+            ) : null}
+            {selectedId !== "new" && recentRuns ? (
+              <div className="mt-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-[11px] text-slate-600">
+                {recentRuns[0] ? (
+                  <div>
+                    Last run: <span className="font-medium">{recentRuns[0].status}</span>
+                    {recentRuns[0].updatedAt
+                      ? ` • ${new Date(recentRuns[0].updatedAt).toLocaleString()}`
+                      : ""}
+                    {recentRuns[0].note ? ` • ${recentRuns[0].note}` : ""}
+                  </div>
+                ) : (
+                  <div>No runs yet.</div>
+                )}
               </div>
             ) : null}
             {error ? (

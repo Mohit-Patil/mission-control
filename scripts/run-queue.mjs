@@ -74,7 +74,11 @@ async function main() {
       const jobName = `mc-heartbeat:${ws.slug}:${req.agentId}`;
       oc("cron", "run", "--name", jobName);
 
-      await client.mutation(api.runRequests.markDone, { id: req._id, status: "done" });
+      await client.mutation(api.runRequests.markDone, {
+        id: req._id,
+        status: "done",
+        note: `ran at ${new Date().toISOString()}`,
+      });
     } catch (err) {
       await client.mutation(api.runRequests.markDone, {
         id: req._id,

@@ -138,6 +138,29 @@ export const updateStatus = mutation({
       message: `${actor} moved “${task?.title ?? "(unknown task)"}” to ${args.status}`,
       createdAt: now,
     });
+
+    // Auto-assign: when moved to Assigned with no assignees, pick an active LEAD.
+    if (args.status === "assigned" && (task.assigneeIds ?? []).length === 0) {
+      const agents = await ctx.db
+        .query("agents")
+        .withIndex("by_workspace_name", (q) => q.eq("workspaceId", args.workspaceId))
+        .collect();
+
+      const active = agents.filter((a) => a.status === "active");
+      const lead = active.find((a) => a.level === "LEAD");
+      const pick = lead ?? active[0];
+
+      if (pick) {
+        await setAssigneesCore(ctx, {
+          workspaceId: args.workspaceId,
+          id: args.id,
+          assigneeIds: [pick._id],
+          fromAgentId: args.fromAgentId,
+          fromHuman: args.fromHuman,
+          actorName: args.actorName,
+        });
+      }
+    }
   },
 });
 

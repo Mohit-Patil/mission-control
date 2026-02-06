@@ -37,6 +37,24 @@ export const listPending = query({
   },
 });
 
+export const listForAgent = query({
+  args: {
+    workspaceId: v.id("workspaces"),
+    agentId: v.id("agents"),
+    limit: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const limit = args.limit ?? 5;
+    return await ctx.db
+      .query("runRequests")
+      .withIndex("by_workspace_agent", (q) =>
+        q.eq("workspaceId", args.workspaceId).eq("agentId", args.agentId)
+      )
+      .order("desc")
+      .take(limit);
+  },
+});
+
 export const markDone = mutation({
   args: {
     id: v.id("runRequests"),
