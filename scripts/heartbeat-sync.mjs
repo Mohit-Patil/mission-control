@@ -52,10 +52,10 @@ function getConvexUrl() {
 }
 
 function minuteOffset(key) {
-  // Stable 0..14 offset
+  // Stable 0..4 offset (5-minute cadence)
   let h = 0;
   for (let i = 0; i < key.length; i++) h = (h * 31 + key.charCodeAt(i)) >>> 0;
-  return h % 15;
+  return h % 5;
 }
 
 async function main() {
@@ -73,7 +73,7 @@ async function main() {
     const agents = await client.query(api.agents.list, { workspaceId: ws._id });
     for (const a of agents) {
       const off = minuteOffset(`${ws.slug}:${a._id}`);
-      const cronExpr = `${off}-59/15 * * * *`;
+      const cronExpr = `${off}-59/5 * * * *`;
       desired.push({
         name: `mc-heartbeat:${ws.slug}:${a._id}`,
         workspaceSlug: ws.slug,
