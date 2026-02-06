@@ -183,18 +183,30 @@ function Pill({
   );
 }
 
+function formatNextRun(lastRunAt: number | undefined, level: string) {
+  if (!lastRunAt) return "No runs yet";
+  const intervalMs = level === "COORD" ? 15 * 60 * 1000 : 5 * 60 * 1000;
+  const nextAt = lastRunAt + intervalMs;
+  const diff = nextAt - Date.now();
+  if (diff <= 0) return "Due now";
+  const mins = Math.ceil(diff / 60000);
+  return `Next run ~${mins}m`;
+}
+
 function AgentCard({
   name,
   role,
   level,
   status,
   rawStatus,
+  lastRunAt,
 }: {
   name: string;
   role: string;
   level: string;
   status: string;
   rawStatus: string;
+  lastRunAt?: number;
 }) {
   const dotClass =
     rawStatus === "active"
@@ -208,6 +220,8 @@ function AgentCard({
       : rawStatus === "blocked"
         ? "text-red-600"
         : "text-zinc-500";
+
+  const nextRunLabel = formatNextRun(lastRunAt, level);
 
   return (
     <div className="mc-agent">
@@ -224,6 +238,7 @@ function AgentCard({
             <span className={`text-[10px] font-semibold uppercase tracking-wide ${statusColor}`}>{status}</span>
           </span>
         </div>
+        <div className="mt-0.5 text-[10px] text-zinc-400">{nextRunLabel}</div>
       </div>
     </div>
   );
@@ -248,6 +263,7 @@ function TaskCard({
   priority,
   assignees,
   updatedAgo,
+  pickupEstimate,
   onClick,
   draggable,
   isKeyboardDragging,
@@ -261,6 +277,7 @@ function TaskCard({
   priority?: string;
   assignees?: { name: string }[];
   updatedAgo: string;
+  pickupEstimate?: string;
   onClick?: () => void;
   draggable?: boolean;
   isKeyboardDragging?: boolean;
@@ -308,6 +325,10 @@ function TaskCard({
         <div className="mt-3 flex items-center">
           <span className="text-[11px] text-zinc-500">{updatedAgo}</span>
         </div>
+      )}
+
+      {pickupEstimate && (
+        <div className="mt-1.5 text-[10px] text-amber-600">{pickupEstimate}</div>
       )}
 
       <div className="mt-2 flex flex-wrap gap-1">
@@ -730,6 +751,7 @@ export function MissionControlPage({ workspace }: { workspace: Doc<"workspaces">
   const workspaces = useQuery(api.workspaces.list);
 
   const agents = useQuery(api.agents.list, { workspaceId: workspace._id });
+  const lastHeartbeats = useQuery(api.agents.lastHeartbeats, { workspaceId: workspace._id });
   const inbox = useQuery(api.tasks.listByStatus, { workspaceId: workspace._id, status: "inbox" });
   const assigned = useQuery(api.tasks.listByStatus, { workspaceId: workspace._id, status: "assigned" });
   const inProgress = useQuery(api.tasks.listByStatus, {
@@ -1183,6 +1205,7 @@ export function MissionControlPage({ workspace }: { workspace: Doc<"workspaces">
                   level={a.level}
                   rawStatus={a.status}
                   status={a.status === "active" ? "Working" : a.status === "blocked" ? "Blocked" : "Idle"}
+                  lastRunAt={lastHeartbeats?.[a._id]}
                 />
               ))
             ) : (
@@ -1448,6 +1471,31 @@ export function MissionControlPage({ workspace }: { workspace: Doc<"workspaces">
                             name: agentNameById.get(aid) ?? "Agent",
                           }))}
                           updatedAgo={new Date(task.updatedAt).toLocaleDateString()}
+                          pickupEstimate={(() => {
+                            if (!lastHeartbeats) return undefined;
+                            if (task.status === "inbox") {
+                              // JARVIS (COORD) triages inbox tasks
+                              const coord = (agents ?? []).find((a) => a.level === "COORD");
+                              if (!coord) return "No coordinator";
+                              const last = lastHeartbeats[coord._id];
+                              if (!last) return "JARVIS: awaiting first run";
+                              const next = last + 15 * 60 * 1000;
+                              const diff = next - Date.now();
+                              if (diff <= 0) return "JARVIS: triage due now";
+                              return `JARVIS triages in ~${Math.ceil(diff / 60000)}m`;
+                            }
+                            if (task.status === "assigned" || task.status === "in_progress") {
+                              const assigneeId = (task.assigneeIds ?? [])[0];
+                              if (!assigneeId) return undefined;
+                              const last = lastHeartbeats[assigneeId];
+                              if (!last) return "Agent: awaiting first run";
+                              const next = last + 5 * 60 * 1000;
+                              const diff = next - Date.now();
+                              if (diff <= 0) return "Agent pickup due now";
+                              return `Agent picks up in ~${Math.ceil(diff / 60000)}m`;
+                            }
+                            return undefined;
+                          })()}
                           draggable
                           isKeyboardDragging={keyboardDrag?.taskId === task._id}
                           onDragStart={() => {

@@ -25,6 +25,32 @@ export const getById = query({
   },
 });
 
+/**
+ * Returns the last heartbeat/coordination activity timestamp per agent.
+ */
+export const lastHeartbeats = query({
+  args: {
+    workspaceId: v.id("workspaces"),
+  },
+  handler: async (ctx, args) => {
+    const recent = await ctx.db
+      .query("activities")
+      .withIndex("by_workspace_created", (q) => q.eq("workspaceId", args.workspaceId))
+      .order("desc")
+      .take(500);
+
+    const lastByAgent: Record<string, number> = {};
+    for (const a of recent) {
+      if (!a.agentId) continue;
+      if (a.type !== "heartbeat" && a.type !== "coordination" && a.type !== "comment") continue;
+      if (!lastByAgent[a.agentId]) {
+        lastByAgent[a.agentId] = a.createdAt;
+      }
+    }
+    return lastByAgent;
+  },
+});
+
 export const upsert = mutation({
   args: {
     workspaceId: v.id("workspaces"),
