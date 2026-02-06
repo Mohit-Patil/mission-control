@@ -20,10 +20,16 @@ Type=oneshot
 WorkingDirectory=$ROOT_DIR
 ExecStart=/usr/bin/node $ROOT_DIR/scripts/run-queue.mjs
 Environment=NODE_ENV=production
+EnvironmentFile=-/etc/mission-control-run-queue.env
 
 [Install]
 WantedBy=multi-user.target
 EOF
+
+# Default to a common local codex path if available
+if [[ ! -f /etc/mission-control-run-queue.env ]]; then
+  echo "CODEX_CMD=/home/ubuntu/.npm-global/bin/codex" > /etc/mission-control-run-queue.env
+fi
 
 cat > "$TIMER_PATH" <<EOF
 [Unit]
