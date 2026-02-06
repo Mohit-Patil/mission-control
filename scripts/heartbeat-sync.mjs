@@ -80,6 +80,9 @@ async function main() {
         workspaceId: ws._id,
         agentId: a._id,
         agentName: a.name,
+        agentRole: a.role,
+        agentPrompt: a.prompt || "",
+        agentNotes: a.systemNotes || "",
         cron: cronExpr,
       });
     }
