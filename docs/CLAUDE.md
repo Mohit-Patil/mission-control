@@ -143,4 +143,66 @@ npm run start -- --hostname 0.0.0.0 --port 3004
 
 ---
 
-If you want more details (data migrations, ops docs, deployment, or auth), I can expand this file.
+## Auth & Access
+
+Current setup assumes **no end‑user auth**. Anyone with the URL can access the UI.
+
+If you want authentication later, options include:
+- NextAuth (email/OAuth)
+- Convex auth providers
+- Basic auth in front of Next.js
+
+---
+
+## Deployment Notes
+
+### Convex
+- Hosted deployment configured in `.env.local` via `NEXT_PUBLIC_CONVEX_URL`.
+- Use `npx convex dev` for local function updates.
+- For prod, keep Convex Cloud deployment consistent with your env.
+
+### Next.js
+- Production mode:
+```bash
+npm run build
+npm run start -- --hostname 0.0.0.0 --port 3004
+```
+- Ensure your process manager (systemd/pm2/etc.) restarts the service if it crashes.
+
+---
+
+## Migrations
+
+All migrations are done through Convex functions:
+
+- `convex/migrations.ts`
+  - `migrateToWorkspaces`
+  - `moveWorkspaceData`
+- `convex/admin.ts`
+  - `clearTasksAndAgents`
+
+If you need a migration:
+1. Add a mutation in `convex/migrations.ts`.
+2. Run it once via the Convex dashboard.
+3. Remove or leave it for reference.
+
+---
+
+## Ops & Scheduling
+
+OpenClaw cron jobs manage:
+- per‑agent heartbeats
+- run‑queue worker
+
+Key job names:
+- `mc-heartbeat:<workspaceSlug>:<agentId>`
+- `Mission Control: run-queue worker`
+
+To resync all heartbeats:
+```bash
+node scripts/heartbeat-sync-openclaw.mjs
+```
+
+---
+
+If you want more details (security review, auth implementation, or infra diagrams), I can expand this file further.
